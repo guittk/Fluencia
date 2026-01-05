@@ -103,6 +103,29 @@
   };
 
   document.body.appendChild(script);
+  
+  if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    const container = document.getElementById("unity-container");
+
+    function fixHeight() {
+      const h = window.visualViewport
+        ? window.visualViewport.height
+        : window.innerHeight;
+
+      container.style.height = h + "px";
+    }
+
+    // inicial
+    fixHeight();
+
+    // teclado abre / fecha
+    window.visualViewport?.addEventListener("resize", fixHeight);
+    window.addEventListener("resize", fixHeight);
+    window.addEventListener("focusin", fixHeight);
+    window.addEventListener("focusout", () => {
+      setTimeout(fixHeight, 300);
+    });
+  }
 </script>
 
   </body>
