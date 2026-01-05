@@ -52,81 +52,46 @@
     </div>
 
     <script>
-  function unityShowBanner(msg, type) {
-    console.log(`[${type}] ${msg}`);
-  }
-
-  function isMobile() {
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  }
-
-  var buildUrl = "Build";
-  var loaderUrl = buildUrl + "/Anki.loader.js";
-  var config = {
-    arguments: [],
-    dataUrl: buildUrl + "/Anki.data",
-    frameworkUrl: buildUrl + "/Anki.framework.js",
-    codeUrl: buildUrl + "/Anki.wasm",
-    streamingAssetsUrl: "StreamingAssets",
-    companyName: "Thurgh",
-    productName: "Anki",
-    productVersion: "0.1.0",
-    showBanner: unityShowBanner,
-  };
-
-  var canvas = document.querySelector("#unity-canvas");
-  var container = document.querySelector("#unity-container");
-
-  if (isMobile()) {
-    container.className = "unity-mobile";
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-  }
-
-  document.querySelector("#unity-loading-bar").style.display = "block";
-
-  var script = document.createElement("script");
-  script.src = loaderUrl;
-  script.onload = () => {
-    createUnityInstance(canvas, config, (progress) => {
-      document.querySelector("#unity-progress-bar-full").style.width = (100 * progress) + "%";
-    }).then((unityInstance) => {
-      document.querySelector("#unity-loading-bar").style.display = "none";
-
-      // Fullscreen APENAS no desktop
-      if (!isMobile()) {
-        unityInstance.SetFullscreen(1);
+      function unityShowBanner(msg, type) {
+        console.log(`[${type}] ${msg}`);
       }
-    }).catch((message) => {
-      alert(message);
-    });
-  };
 
-  document.body.appendChild(script);
-  
-  if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    const container = document.getElementById("unity-container");
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/Anki.loader.js";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/Anki.data",
+        frameworkUrl: buildUrl + "/Anki.framework.js",
+        codeUrl: buildUrl + "/Anki.wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "Thurgh",
+        productName: "Anki",
+        productVersion: "0.1.0",
+        showBanner: unityShowBanner,
+      };
 
-    function fixHeight() {
-      const h = window.visualViewport
-        ? window.visualViewport.height
-        : window.innerHeight;
+      // Forçar fullscreen no desktop e mobile
+      var canvas = document.querySelector("#unity-canvas");
+      var container = document.querySelector("#unity-container");
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      container.className = "unity-mobile";
 
-      container.style.height = h + "px";
-    }
+      document.querySelector("#unity-loading-bar").style.display = "block";
 
-    // inicial
-    fixHeight();
-
-    // teclado abre / fecha
-    window.visualViewport?.addEventListener("resize", fixHeight);
-    window.addEventListener("resize", fixHeight);
-    window.addEventListener("focusin", fixHeight);
-    window.addEventListener("focusout", () => {
-      setTimeout(fixHeight, 300);
-    });
-  }
-</script>
-
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {
+          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+        }).then((unityInstance) => {
+          document.querySelector("#unity-loading-bar").style.display = "none";
+          unityInstance.SetFullscreen(1);
+        }).catch((message) => {
+          alert(message);
+        });
+      };
+      document.body.appendChild(script);
+    </script>
   </body>
 </html>
