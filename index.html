@@ -92,13 +92,6 @@
         });
       };
       document.body.appendChild(script);
-	  
-	  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", () => {
-      const container = document.getElementById("unity-container");
-      container.style.height = window.visualViewport.height + "px";
-    });
-  }
     </script>
   </body>
 </html>
