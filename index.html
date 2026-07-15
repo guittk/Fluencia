@@ -878,6 +878,7 @@
     if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
       loadOpenAiKey();
       showToast("Acessando OpenAI, tente novamente!");
+      return;
     }
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method:"POST",
