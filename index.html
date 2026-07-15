@@ -1,96 +1,1350 @@
 <!DOCTYPE html>
-<html lang="en-us">
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Unity Web Player | Anki</title>
-    <link rel="shortcut icon" href="TemplateData/favicon.ico">
-    <link rel="stylesheet" href="TemplateData/style.css">
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fluência — Repetição Espaçada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14171c;
+    --bg-deep: #0f1216;
+    --surface: #1c2027;
+    --surface-hi: #242a33;
+    --line: rgba(255,255,255,0.08);
+    --line-strong: rgba(255,255,255,0.14);
+    --text: #edeff1;
+    --text-mut: #8b93a1;
+    --text-dim: #5b6270;
+    --sage: #7fa37a;
+    --sage-soft: rgba(127,163,122,0.14);
+    --sage-line: rgba(127,163,122,0.4);
+    --gold: #ffc400;
+    --gold-soft: rgba(201,162,39,0.13);
+    --gold-line: rgba(201,162,39,0.45);
+    --coral: #b46a5c;
+    --coral-soft: rgba(180,106,92,0.14);
+    --radius: 14px;
+    --radius-sm: 9px;
+    --serif: 'Fraunces', serif;
+    --sans: 'Inter', sans-serif;
+    --mono: 'IBM Plex Mono', monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: radial-gradient(1200px 800px at 15% -10%, #1a1f26 0%, var(--bg) 55%);
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing:antialiased;
+    display:flex;
+    min-height:100vh;
+  }
+  ::selection{ background: var(--sage-soft); color: var(--text); }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
+  }
 
-    <style>
-      html, body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-        width: 100%;
-        overflow: hidden;
-        background: #000;
-      }
-      #unity-container {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-      }
-      #unity-canvas {
-        width: 100%;
-        height: 100%;
-      }
-      #unity-loading-bar {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-      }
-      #unity-warning, #unity-footer {
-        display: none !important;
-      }
-    </style>
-  </head>
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width: 250px;
+    flex-shrink:0;
+    background: var(--bg-deep);
+    border-right: 1px solid var(--line);
+    padding: 26px 18px;
+    display:flex;
+    flex-direction:column;
+    gap: 26px;
+    position: sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding: 0 6px;
+  }
+  .brand-mark{
+    width:30px;height:30px;border-radius:8px;
+    background: linear-gradient(135deg, var(--sage) 0%, #4f6d4c 100%);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--serif); font-weight:600; font-size:15px; color:#0f1410;
+    flex-shrink:0;
+  }
+  .brand-name{ font-family:var(--serif); font-size:17px; font-weight:600; letter-spacing:0.2px; }
+  .brand-sub{ font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1.2px; margin-top:1px; }
 
-  <body>
-    <div id="unity-container">
-      <canvas id="unity-canvas" tabindex="-1"></canvas>
-      <div id="unity-loading-bar">
-        <div id="unity-logo"></div>
-        <div id="unity-progress-bar-empty">
-          <div id="unity-progress-bar-full"></div>
+  .nav-level{ display:flex; flex-direction:column; gap:4px; }
+  .nav-level-label{
+    font-size:10.5px; letter-spacing:1.4px; text-transform:uppercase;
+    color: var(--text-dim); padding: 10px 10px 2px;
+    font-weight:600;
+  }
+  .nav-item{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 10px; border-radius:9px; cursor:pointer;
+    color: var(--text-mut); font-size:13.5px; font-weight:500;
+    border:1px solid transparent;
+    user-select:none;
+  }
+  .nav-item:hover{ background: rgba(255,255,255,0.03); color:var(--text); }
+  .nav-item.active{
+    background: var(--surface-hi);
+    color: var(--text);
+    border-color: var(--line-strong);
+  }
+  .nav-item .dot{
+    width:6px;height:6px;border-radius:50%; background:var(--text-dim); flex-shrink:0;
+  }
+  .nav-item.active .dot{ background: var(--sage); box-shadow:0 0 0 3px var(--sage-soft); }
+  .nav-item .badge{
+    margin-left:auto; font-family:var(--mono); font-size:9.5px; color:var(--text-dim);
+    background: rgba(255,255,255,0.04); padding:2px 6px; border-radius:20px;
+  }
+
+  .sidebar-foot{ margin-top:auto; padding-top:14px; border-top:1px solid var(--line); }
+
+  /* ---------- Main ---------- */
+  .main{ flex:1; min-width:0; padding: 34px 44px 60px; }
+  .view{ display:none; animation: fadein 0.32s ease; }
+  .view.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  .view-head{ display:flex; align-items:flex-end; justify-content:space-between; margin-bottom: 30px; gap:20px; flex-wrap:wrap;}
+  .eyebrow{ font-family:var(--mono); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color: var(--sage); margin:0 0 6px; }
+  .view-title{ font-family:var(--serif); font-size:30px; font-weight:600; margin:0; letter-spacing:-0.2px; }
+  .view-desc{ color:var(--text-mut); font-size:13.5px; margin-top:6px; max-width:520px; line-height:1.5; }
+  .date-pill{
+    font-family:var(--mono); font-size:12px; color:var(--text-mut);
+    border:1px solid var(--line); padding:7px 13px; border-radius:20px; white-space:nowrap;
+  }
+
+  .hero-card{
+    background: linear-gradient(160deg, var(--surface) 0%, var(--surface-hi) 100%);
+    border:1px solid var(--line-strong);
+    border-radius: 20px;
+    padding: 34px 36px 30px;
+    position:relative;
+    overflow:hidden;
+    margin-bottom: 22px;
+  }
+  .hero-glow{
+    position:absolute; inset:-40% -20% auto auto; width:340px; height:340px;
+    background: radial-gradient(circle, var(--sage-soft) 0%, transparent 70%);
+    animation: breathe 7s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes breathe{ 0%,100%{ opacity:0.55; transform:scale(1);} 50%{ opacity:1; transform:scale(1.08);} }
+
+  .btn{
+    font-family: var(--sans); font-size:13px; font-weight:600; border-radius:10px;
+    padding:10px 18px; border:1px solid transparent; cursor:pointer; display:inline-flex; align-items:center; gap:7px;
+  }
+  .btn-primary{ background: var(--sage); color:#0f1410; }
+  .btn-primary:hover{ background:#8fb389; }
+  .btn-ghost{ background: transparent; border-color: var(--line-strong); color: var(--text); }
+  .btn-ghost:hover{ border-color: var(--sage-line); color:var(--sage); }
+  .btn-sm{ padding:6px 12px; font-size:12px; border-radius:8px; }
+  .btn-edit{ background:transparent; color:var(--text-mut); border:1px solid var(--line-strong); }
+  .btn-edit:hover{ color:var(--text); border-color:var(--gold-line); }
+  .btn-reject{ background:transparent; color:var(--text-dim); border:1px solid var(--line); }
+  .btn-reject:hover{ color:var(--coral); border-color: rgba(180,106,92,0.4); }
+  .btn:disabled{ opacity:0.45; cursor:not-allowed; }
+
+  .panel{
+    background: var(--surface); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 22px;
+  }
+  .panel-title{
+    font-size:11.5px; text-transform:uppercase; letter-spacing:1.1px; color:var(--text-mut);
+    font-weight:600; margin:0 0 14px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .tag{
+    font-size:10.5px; font-family:var(--mono); padding:2px 8px; border-radius:20px; white-space:nowrap;
+  }
+  .tag-sage{ background:var(--sage-soft); color:var(--sage); }
+  .tag-gold{ background:var(--gold-soft); color:var(--gold); }
+
+  /* ---------- Stat grid / bar chart / health rows ---------- */
+  .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  @media (max-width:880px){ .stat-grid{ grid-template-columns:repeat(2,1fr);} }
+  .stat-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm); padding:16px 18px; }
+  .stat-num{ font-family:var(--serif); font-size:26px; font-weight:600; }
+  .stat-label{ font-size:11.5px; color:var(--text-mut); margin-top:3px; }
+
+  .bar-chart{ display:flex; align-items:flex-end; gap:10px; height:120px; padding-top:10px; }
+  .bar-col{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; gap:6px; }
+  .bar-fill{ width:100%; max-width:34px; border-radius:6px 6px 2px 2px; background:linear-gradient(180deg, #9cc296, var(--sage)); min-height:3px; }
+  .bar-label{ font-family:var(--mono); font-size:10px; color:var(--text-dim); }
+
+  .health-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .health-row:last-child{ border-bottom:none; padding-bottom:0; }
+  .health-dot{ font-family:var(--mono); font-size:10.5px; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  .health-ok{ background:var(--sage-soft); color:var(--sage); }
+  .health-atencao{ background:var(--gold-soft); color:var(--gold); }
+  .health-risco{ background:rgba(180,106,92,0.14); color:var(--coral); }
+  .health-neutral{ background:rgba(255,255,255,0.05); color:var(--text-dim); }
+
+  /* ---------- Study cards grid (manage view) ---------- */
+  .study-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:12px; margin-top:4px; }
+  .study-card{ background:var(--surface-hi); border:1px solid var(--line); border-radius:var(--radius-sm); padding:16px 16px; }
+  .study-card-title{ font-family:var(--serif); font-size:16px; font-weight:600; margin-bottom:6px; }
+  .study-card-meta{ font-size:12px; color:var(--text-mut); line-height:1.5; }
+  .study-card-meta em{ color:var(--text-dim); font-style:italic; }
+  .card-metrics{ display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--text-dim); font-family:var(--mono); }
+
+  .capture-bar{
+    display:flex; gap:10px; background:var(--surface-hi); border:1px solid var(--line-strong);
+    border-radius: 12px; padding:6px 6px 6px 16px;
+  }
+  .capture-bar input{
+    flex:1; background:transparent; border:none; outline:none; color:var(--text); font-size:14px; font-family:var(--sans);
+  }
+  .capture-bar input::placeholder{ color: var(--text-dim); }
+  .inbox-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .inbox-item{
+    display:flex; align-items:center; gap:12px; background:var(--surface-hi); border:1px solid var(--line);
+    border-radius:9px; padding:9px 14px;
+  }
+  .inbox-text{ flex:1; font-size:13px; }
+  .inbox-remove{ background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; }
+  .inbox-remove:hover{ color:var(--coral); }
+
+  .empty-msg{ color:var(--text-dim); font-size:12.5px; padding:14px 2px; }
+
+  /* ---------- Config sections (settings view) ---------- */
+  .config-section{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:22px 24px; margin-bottom:16px; }
+  .config-section-title{ font-family:var(--serif); font-size:16px; font-weight:600; margin:0 0 3px; }
+  .config-section-desc{ font-size:12px; color:var(--text-mut); margin:0 0 16px; line-height:1.5; }
+  .config-row{ display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 0; border-top:1px solid var(--line); flex-wrap:wrap; }
+  .config-section .config-row:first-of-type{ border-top:none; padding-top:0; }
+  .config-row-label{ font-size:13.5px; }
+  .config-row-desc{ font-size:11.5px; color:var(--text-dim); margin-top:2px; max-width:320px; }
+  .config-input{
+    background:var(--surface-hi); border:1px solid var(--line-strong); border-radius:9px; padding:8px 12px;
+    color:var(--text); font-family:var(--sans); font-size:13px; outline:none; min-width:200px;
+  }
+  .config-input:focus{ border-color:var(--sage-line); }
+
+  /* ---------- Login screen ---------- */
+  .login-shell{ min-height:100vh; width:100%; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .login-card{ width:380px; max-width:100%; }
+  .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+  .field label{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:1px; color:var(--text-dim); }
+  .field input{
+    background:var(--surface-hi); border:1px solid var(--line-strong); border-radius:9px; padding:10px 12px;
+    color:var(--text); font-family:var(--sans); font-size:13.5px; outline:none;
+  }
+  .field input:focus{ border-color:var(--sage-line); }
+  .login-error{ color:var(--coral); font-size:12.5px; min-height:16px; margin-bottom:6px; }
+  .notice-link{ color:var(--sage); font-weight:600; cursor:pointer; font-size:12.5px; }
+  .notice-link:hover{ text-decoration:underline; }
+
+  /* ---------- Flashcard ---------- */
+  .flashcard-wrap{ width:100%; max-width:420px; height:230px; perspective:1400px; margin:0 auto; position:relative; z-index:1; }
+  .flashcard-inner{ position:relative; width:100%; height:100%; transition:transform .5s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d; }
+  .flashcard-inner.flipped{ transform:rotateY(180deg); }
+  .face{
+    position:absolute; inset:0; backface-visibility:hidden; border-radius:14px; padding:26px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    background:var(--surface-hi); border:1px solid var(--line-strong);
+  }
+  .face.back{ transform:rotateY(180deg); }
+  .word-text{ font-family:var(--serif); font-size:30px; font-weight:600; }
+  .english-text{ font-family:var(--serif); font-size:18px; margin-bottom:8px; line-height:1.35; }
+  .portuguese-text{ font-size:13.5px; color:var(--text-mut); }
+  .postmark-badge{
+    position:absolute; top:14px; right:16px; width:44px;height:44px; border:2px dashed var(--sage-line);
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:13px; font-weight:600; color:var(--sage); background:var(--sage-soft);
+  }
+  .card-controls{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:20px; position:relative; z-index:1; }
+  .card-controls .btn{ flex:1 1 auto; min-width:120px; justify-content:center; }
+  .btn-wrong{ background:rgba(180,106,92,0.16); color:var(--coral); border:1px solid rgba(180,106,92,0.4); }
+  .btn-wrong:hover{ background:rgba(180,106,92,0.28); }
+  .btn-warn{ background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold-line); }
+  .btn-warn:hover{ background:rgba(201,162,39,0.24); }
+  .btn-correct{ background:var(--sage-soft); color:var(--sage); border:1px solid var(--sage-line); }
+  .btn-correct:hover{ background:rgba(127,163,122,0.26); }
+  .btn-correct-plus{ background:var(--sage); color:#0f1410; }
+  .btn-correct-plus:hover{ background:#8fb389; }
+
+  /* ---------- Icon buttons / mobile nav ---------- */
+  .btn-icon{
+    width:36px;height:36px;border-radius:9px; background:var(--surface-hi); border:1px solid var(--line-strong);
+    color:var(--text-mut); font-size:16px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .btn-icon:hover{ color:var(--text); border-color:var(--sage-line); }
+
+  .mobile-topbar{
+    display:none; position:fixed; top:0; left:0; right:0; z-index:70; background:var(--bg-deep);
+    border-bottom:1px solid var(--line); padding:14px 18px; align-items:center; justify-content:space-between;
+  }
+  .sidebar-backdrop{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:75; }
+  .sidebar-backdrop.active{ display:block; }
+
+  @media (max-width:880px){
+    .sidebar{ display:none; }
+    .main{ padding:22px; }
+    .mobile-topbar{ display:flex; }
+    .main{ padding-top:88px; }
+    .sidebar.mobile-open{
+      display:flex !important;
+      position:fixed; top:0; left:0; height:100vh; width:78vw; max-width:290px; z-index:80;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    }
+    .flashcard-wrap{ height:210px; }
+    .word-text{ font-size:24px; }
+    .stat-grid{ grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:480px){
+    .study-grid{ grid-template-columns:1fr; }
+    .card-controls .btn{ min-width:100%; }
+  }
+
+  /* ---------- Toast / loading ---------- */
+  #toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--surface-hi); color:var(--text); border:1px solid var(--line-strong);
+    padding:12px 20px; border-radius:10px; font-size:13px; z-index:120;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+  }
+  #toast.show{ opacity:1; }
+  #loading-overlay{
+    position:fixed; inset:0; background:rgba(15,18,22,0.75);
+    display:flex; flex-direction:column; gap:14px; align-items:center; justify-content:center; z-index:130;
+  }
+  .spinner{ width:36px;height:36px;border:4px solid var(--line-strong); border-top-color:var(--sage); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="screen-login" class="login-shell">
+  <div class="login-card panel">
+    <div class="brand" style="margin-bottom:22px;">
+      <div class="brand-mark">Fl</div>
+      <div>
+        <div class="brand-name">Fluência</div>
+        <div class="brand-sub">Repetição espaçada</div>
+      </div>
+    </div>
+    <p class="eyebrow">Acesso</p>
+    <h1 class="view-title" style="font-size:21px;margin-bottom:16px;">Entrar na sua conta</h1>
+    <div id="login-error" class="login-error"></div>
+    <div class="field">
+      <label for="login-email">Email</label>
+      <input type="email" id="login-email" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="login-password">Senha</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+    </div>
+    <div style="display:flex; gap:10px; margin-top:8px;">
+      <button class="btn btn-primary" id="btn-login" style="flex:1;justify-content:center;">Entrar</button>
+      <button class="btn btn-ghost" id="btn-signup" style="flex:1;justify-content:center;">Criar conta</button>
+    </div>
+    <div style="text-align:center;margin-top:16px;">
+      <span class="notice-link" id="link-forgot">Esqueci minha senha</span>
+    </div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app-shell" class="hidden" style="display:flex; width:100%;">
+
+  <div class="mobile-topbar">
+    <button class="btn-icon" id="btn-hamburger">☰</button>
+    <div class="brand-name" style="font-size:15px;">Fluência</div>
+    <button class="btn-icon" id="btn-mobile-logout" title="Sair">🚪</button>
+  </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Fl</div>
+      <div>
+        <div class="brand-name">Fluência</div>
+        <div class="brand-sub">Repetição espaçada</div>
+      </div>
+    </div>
+    <nav class="nav-level">
+      <div class="nav-level-label">Módulo</div>
+      <div class="nav-item active" data-view="view-study"><span class="dot"></span>Estudar</div>
+      <div class="nav-item" data-view="view-manage"><span class="dot"></span>Cards<span class="badge" id="nav-card-count">0</span></div>
+      <div class="nav-item" data-view="view-stats"><span class="dot"></span>Estatísticas</div>
+      <div class="nav-item" data-view="view-settings"><span class="dot"></span>Configurações</div>
+    </nav>
+    <div class="sidebar-foot">
+      <div style="font-family:var(--mono); font-size:11.5px; color:var(--text-mut); word-break:break-all;" id="sidebar-email"></div>
+      <button class="btn btn-ghost btn-sm" id="btn-logout" style="width:100%;margin-top:12px;justify-content:center;">Sair</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ESTUDAR -->
+    <section class="view active" id="view-study">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Sessão de estudo</p>
+          <h2 class="view-title">Estudar</h2>
+          <p class="view-desc" id="deck-status">Carregando baralho…</p>
         </div>
       </div>
-      <div id="unity-warning"></div>
-    </div>
 
-    <script>
-      function unityShowBanner(msg, type) {
-        console.log(`[${type}] ${msg}`);
+      <div class="hero-card">
+        <div class="hero-glow"></div>
+        <div class="flashcard-wrap">
+          <div class="flashcard-inner" id="flashcard-inner">
+            <div class="face front">
+              <p class="eyebrow">Palavra</p>
+              <div class="word-text" id="card-word">—</div>
+            </div>
+            <div class="face back">
+              <div class="postmark-badge" id="postmark-badge">0</div>
+              <p class="eyebrow">Frase</p>
+              <div class="english-text" id="card-english">—</div>
+              <div class="portuguese-text" id="card-portuguese">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-controls" id="controls-turn">
+          <button class="btn btn-primary" id="btn-turn" style="flex:1 1 100%;">Virar carta</button>
+        </div>
+
+        <div class="card-controls hidden" id="controls-answer">
+          <button class="btn btn-wrong" id="btn-wrong">✗ Errei</button>
+          <button class="btn btn-warn" id="btn-warning">≈ Quase</button>
+          <button class="btn btn-correct" id="btn-correct">✓ Acertei</button>
+          <button class="btn btn-correct-plus" id="btn-correct-plus">✓✓ Fácil</button>
+          <button class="btn btn-ghost" id="btn-sound">🔊 Ouvir</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CARDS -->
+    <section class="view" id="view-manage">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Gerenciar baralho</p>
+          <h2 class="view-title">Cards</h2>
+          <p class="view-desc">Adicione palavras e gere frases automaticamente com IA.</p>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px;">
+        <p class="panel-title">Adicionar novas palavras <span class="tag tag-sage" id="pending-count-tag">0 pendentes</span></p>
+        <div class="capture-bar">
+          <input id="input-new-word" placeholder="Digite uma palavra em inglês e pressione Enter">
+          <button class="btn btn-primary btn-sm" id="btn-add-word">Adicionar</button>
+        </div>
+        <div class="inbox-list" id="pending-list"></div>
+        <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" id="btn-suggest-ten">✨ Sugerir 10 (IA)</button>
+          <button class="btn btn-primary btn-sm hidden" id="btn-generate-cards">Gerar frases com IA</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Seu baralho <span class="tag tag-gold" id="deck-count-tag">0 cards</span></p>
+        <div class="study-grid" id="card-grid"></div>
+        <p class="empty-msg hidden" id="empty-msg">Nenhum card ainda. Adicione palavras acima para começar.</p>
+      </div>
+    </section>
+
+    <!-- ESTATÍSTICAS -->
+    <section class="view" id="view-stats">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Progresso</p>
+          <h2 class="view-title">Estatísticas</h2>
+          <p class="view-desc">Seu desempenho geral e o de cada card individualmente.</p>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total-cards">0</div>
+          <div class="stat-label">Cards no baralho</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total-reviews">0</div>
+          <div class="stat-label">Revisões totais</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-accuracy">0%</div>
+          <div class="stat-label">Precisão geral</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-streak">0</div>
+          <div class="stat-label">Dias seguidos estudando</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:18px;">
+        <p class="panel-title">Revisões — últimos 7 dias</p>
+        <div class="bar-chart" id="bar-chart"></div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Saúde do vocabulário <span class="tag tag-sage" id="mastered-tag">0 dominados</span></p>
+        <div id="health-list"></div>
+      </div>
+    </section>
+
+    <!-- CONFIGURAÇÕES -->
+    <section class="view" id="view-settings">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Preferências</p>
+          <h2 class="view-title">Configurações</h2>
+        </div>
+      </div>
+
+      <div class="config-section">
+        <p class="config-section-title">Chave da API OpenAI</p>
+        <p class="config-section-desc">Usada para gerar frases dos cards e o áudio de pronúncia. Já vem definida no código-fonte deste app; o campo abaixo só sobrescreve para esta aba/sessão.</p>
+        <div class="config-row">
+          <div>
+            <div class="config-row-label">Chave</div>
+            <div class="config-row-desc">Formato sk-...</div>
+          </div>
+          <input class="config-input" type="password" id="input-openai-key" placeholder="sk-...">
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+          <button class="btn btn-primary btn-sm" id="btn-save-settings">Salvar</button>
+        </div>
+      </div>
+
+      <div class="config-section">
+        <p class="config-section-title">Conta</p>
+        <div class="config-row">
+          <div class="config-row-label">Email</div>
+          <div class="config-row-desc" id="settings-email"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+          <button class="btn btn-ghost btn-sm" id="btn-logout-2">Sair da conta</button>
+        </div>
+      </div>
+
+      <div class="config-section">
+        <p class="config-section-title">Sobre seus dados</p>
+        <p class="config-section-desc">
+          Cada conta tem seu próprio baralho, salvo isoladamente no Firebase em
+          <code>/users/&lt;seu-id&gt;/Cards</code>. Isso permite qualquer número de contas
+          (você, família, alunos) sem misturar o progresso de ninguém.
+        </p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="loading-overlay" class="hidden">
+  <div class="spinner"></div>
+  <div id="loading-text" style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text-mut);">Carregando…</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // =========================================================
+  // CONFIG
+  // =========================================================
+  const FIREBASE_API_KEY = "AIzaSyAQqB__M-gKZWHS4zQ1eIA-X6rGqzVtr0I";
+  const FIREBASE_DB_URL = "https://anki-71f4f-default-rtdb.firebaseio.com";
+
+  // Chave da OpenAI: fixada no código a seu pedido. Troque abaixo pela sua chave real.
+  // O campo em Configurações sobrescreve isso apenas para a sessão atual da aba.
+  const OPENAI_API_KEY_DEFAULT = "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";
+  let openaiApiKey = OPENAI_API_KEY_DEFAULT;
+
+  const HISTORY_CAP = 500;
+
+  // =========================================================
+  // STATE
+  // =========================================================
+  const state = {
+    idToken: null,
+    uid: null,
+    email: null,
+    cards: {},        // wordKey -> card object
+    currentCardKey: null,
+    pendingWords: [],  // [{id, value}]
+    audioCache: {},    // word -> object URL
+  };
+
+  // =========================================================
+  // DOM HELPERS
+  // =========================================================
+  const $ = (id) => document.getElementById(id);
+
+  let toastTimer = null;
+  function showToast(msg){
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>t.classList.remove("show"), 3200);
+  }
+  function showLoading(text){
+    $("loading-text").textContent = text || "Carregando…";
+    $("loading-overlay").classList.remove("hidden");
+  }
+  function hideLoading(){
+    $("loading-overlay").classList.add("hidden");
+  }
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  // =========================================================
+  // CLICK SOUND (sintetizado via Web Audio, sem arquivos externos)
+  // =========================================================
+  let audioCtx = null;
+  function playClick(){
+    try{
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, t);
+      osc.frequency.exponentialRampToValueAtTime(440, t + 0.05);
+      gain.gain.setValueAtTime(0.07, t);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.09);
+    }catch(e){ /* silencioso: alguns navegadores bloqueiam antes do 1º gesto do usuário */ }
+  }
+  document.addEventListener("click", (e) => {
+    if(e.target.closest("button, .nav-item")) playClick();
+  }, true);
+
+  // =========================================================
+  // FIREBASE AUTH (Identity Toolkit REST)
+  // =========================================================
+  async function authRequest(endpoint, body){
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:${endpoint}?key=${FIREBASE_API_KEY}`;
+    const res = await fetch(url, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if(!res.ok){
+      const msg = (data && data.error && data.error.message) || "Erro desconhecido";
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  async function login(email, password){
+    const data = await authRequest("signInWithPassword", { email, password, returnSecureToken:true });
+    state.idToken = data.idToken;
+    state.uid = data.localId;
+    state.email = data.email;
+  }
+
+  async function signup(email, password){
+    const data = await authRequest("signUp", { email, password, returnSecureToken:true });
+    state.idToken = data.idToken;
+    state.uid = data.localId;
+    state.email = data.email;
+  }
+
+  async function forgotPassword(email){
+    await authRequest("sendOobCode", { requestType:"PASSWORD_RESET", email });
+  }
+
+  function translateAuthError(msg){
+    const map = {
+      "EMAIL_NOT_FOUND":"Email não encontrado.",
+      "INVALID_PASSWORD":"Senha incorreta.",
+      "INVALID_LOGIN_CREDENTIALS":"Email ou senha incorretos.",
+      "EMAIL_EXISTS":"Esse email já tem uma conta.",
+      "WEAK_PASSWORD":"A senha precisa ter ao menos 6 caracteres.",
+      "MISSING_EMAIL":"Digite um email.",
+      "INVALID_EMAIL":"Email inválido."
+    };
+    for(const key in map){
+      if(msg && msg.indexOf(key) !== -1) return map[key];
+    }
+    return msg || "Ocorreu um erro. Tente novamente.";
+  }
+
+  // =========================================================
+  // FIREBASE REALTIME DATABASE
+  //   Estrutura profissional, escopada por usuário:
+  //   /users/{uid}/Profile        -> { Email, CreatedAt, LastLogin }
+  //   /users/{uid}/Cards/{wordKey}-> { Word, English, Portuguese, ScoreHits, ... }
+  //   Cada card já nasce dentro do usuário — nenhum dado é compartilhado
+  //   entre contas, então qualquer número de pessoas pode usar o app
+  //   sem que o progresso de uma afete o baralho da outra.
+  //   Regra de segurança sugerida no Firebase:
+  //     "users": { "$uid": { ".read/.write": "auth.uid === $uid" } }
+  // =========================================================
+  function authParam(){
+    return state.idToken ? `auth=${state.idToken}` : "";
+  }
+  function buildUrl(path){
+    const qs = authParam();
+    return `${FIREBASE_DB_URL}${path}.json${qs ? "?" + qs : ""}`;
+  }
+  async function dbGet(path){
+    const res = await fetch(buildUrl(path));
+    if(!res.ok) throw new Error("Falha ao ler dados do Firebase.");
+    return res.json();
+  }
+  async function dbPut(path, data){
+    const res = await fetch(buildUrl(path), {
+      method:"PUT",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) throw new Error("Falha ao salvar dados no Firebase.");
+    return res.json();
+  }
+  async function dbPatch(path, data){
+    const res = await fetch(buildUrl(path), {
+      method:"PATCH",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) throw new Error("Falha ao atualizar dados no Firebase.");
+    return res.json();
+  }
+  async function dbDelete(path){
+    const res = await fetch(buildUrl(path), { method:"DELETE" });
+    if(!res.ok) throw new Error("Falha ao excluir dados no Firebase.");
+    return res.json();
+  }
+
+  function wordKey(word){
+    return word.trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || ("w" + Date.now());
+  }
+
+  function blankCard(word, english, portuguese){
+    return {
+      Word: word,
+      English: english,
+      Portuguese: portuguese,
+      ScoreHits: 0, TotalHits: 0,
+      CorrectHits: 0, CorrectPlusHits: 0, WarningHits: 0, WrongHits: 0,
+      CreatedAt: new Date().toISOString(),
+      History: []
+    };
+  }
+
+  async function loadUserCards(){
+    const remote = await dbGet(`/users/${state.uid}/Cards`);
+    state.cards = remote || {};
+  }
+
+  async function ensureProfile(){
+    try{
+      await dbPatch(`/users/${state.uid}/Profile`, {
+        Email: state.email,
+        LastLogin: new Date().toISOString()
+      });
+      const existing = await dbGet(`/users/${state.uid}/Profile/CreatedAt`);
+      if(!existing){
+        await dbPatch(`/users/${state.uid}/Profile`, { CreatedAt: new Date().toISOString() });
+      }
+    }catch(err){
+      // não bloqueia o login por causa do perfil
+      console.warn(err);
+    }
+  }
+
+  // =========================================================
+  // SCORING (mesma matemática do app original)
+  // =========================================================
+  function pickNextCard(){
+    const keys = Object.keys(state.cards);
+    const weights = keys.map(k => 1 / Math.max(1, state.cards[k].ScoreHits || 0));
+    const total = weights.reduce((a,b)=>a+b, 0);
+    const probs = weights.map(w => w/total);
+    const r = Math.random();
+    let cumulative = 0;
+    for(let i=0;i<probs.length;i++){
+      cumulative += probs[i];
+      if(r < cumulative) return keys[i];
+    }
+    return keys[keys.length-1];
+  }
+
+  function clampCard(card){
+    if(card.TotalHits < 0) card.TotalHits = 0;
+    if(card.ScoreHits < 0) card.ScoreHits = 0;
+    if(card.ScoreHits > card.TotalHits) card.ScoreHits = card.TotalHits;
+  }
+
+  async function answerCard(sum){
+    setAnswerButtonsEnabled(false);
+    const key = state.currentCardKey;
+    const card = state.cards[key];
+
+    card.ScoreHits += sum;
+    card.TotalHits += sum > 1 ? sum : 1;
+
+    if(sum === 0) card.WarningHits += 1;
+    else if(sum < 0) card.WrongHits += 1;
+    else if(sum === 1) card.CorrectHits += 1;
+    else card.CorrectPlusHits += 1;
+
+    clampCard(card);
+
+    if(!card.History) card.History = [];
+    card.History.push({ Date: new Date().toISOString(), Sum: sum });
+    if(card.History.length > HISTORY_CAP){
+      card.History.splice(0, card.History.length - HISTORY_CAP);
+    }
+
+    try{
+      await dbPut(`/users/${state.uid}/Cards/${key}`, card);
+    }catch(err){
+      showToast(err.message);
+    }
+
+    setTimeout(() => loadNextCard(), 200);
+  }
+
+  function setAnswerButtonsEnabled(enabled){
+    ["btn-wrong","btn-warning","btn-correct","btn-correct-plus","btn-sound"].forEach(id=>{
+      $(id).disabled = !enabled;
+    });
+  }
+
+  // =========================================================
+  // ESTUDAR — render
+  // =========================================================
+  function loadNextCard(){
+    $("flashcard-inner").classList.remove("flipped");
+    $("controls-answer").classList.add("hidden");
+    $("controls-turn").classList.remove("hidden");
+
+    const keys = Object.keys(state.cards);
+    $("deck-status").textContent = `Baralho: ${keys.length} card(s)`;
+
+    if(keys.length === 0){
+      state.currentCardKey = null;
+      $("card-word").textContent = "Sem cards ainda";
+      $("controls-turn").classList.add("hidden");
+      return;
+    }
+
+    state.currentCardKey = pickNextCard();
+    const card = state.cards[state.currentCardKey];
+    $("card-word").textContent = card.Word;
+    $("card-english").textContent = card.English;
+    $("card-portuguese").textContent = card.Portuguese;
+    $("postmark-badge").textContent = card.ScoreHits;
+  }
+
+  function turnCard(){
+    if(!state.currentCardKey) return;
+    $("flashcard-inner").classList.add("flipped");
+    $("controls-turn").classList.add("hidden");
+    $("controls-answer").classList.remove("hidden");
+    setAnswerButtonsEnabled(true);
+  }
+
+  // =========================================================
+  // OPENAI — texto
+  // =========================================================
+  async function openaiChat(systemPrompt){
+    if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
+      throw new Error("Configure sua chave da OpenAI em Configurações antes de usar a IA.");
+    }
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization": "Bearer " + openaiApiKey
+      },
+      body: JSON.stringify({
+        model:"gpt-4o-mini",
+        temperature:0.7,
+        messages:[{ role:"system", content: systemPrompt }]
+      })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error((data.error && data.error.message) || "Erro na chamada à OpenAI.");
+    }
+    return data.choices[0].message.content;
+  }
+
+  function extractJson(text){
+    const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    return JSON.parse(cleaned);
+  }
+
+  function promptGenerateCards(words){
+    return "Pegue a lista de Palavras, gere frases simples em Inglês, depois traduza para Português, " +
+      "e devolva **apenas** no seguinte formato JSON, sem explicações adicionais, sem comentários, sem texto fora do JSON:\n\n" +
+      "{\n  \"Phrases\": [\n    { \"Word\": \"WORD1\", \"English\": \"ENGLISH1\", \"Portuguese\": \"PORTUGUESE1\" }\n  ]\n}\n\n" +
+      "Palavras:\n" + words.join("\n");
+  }
+
+  function promptSuggestTenWords(existingWords){
+    return "Analise a lista de palavras em inglês enviada, escolha as 10 palavras mais usadas em inglês que não " +
+      "estejam na lista e devolva **apenas** no seguinte formato JSON, sem explicações adicionais, sem comentários " +
+      "e sem texto fora do JSON:\n\n" +
+      "{\n  \"Words\": [\n    \"WORD1\",\n    \"WORD2\"\n  ]\n}\n\n" +
+      "Palavras:\n" + existingWords.join("\n");
+  }
+
+  function promptRefreshCard(card){
+    return `Pegue a Palavra, e gere uma frase SIMPLES com a palavra "${card.Word}", mas diferente de "${card.English}", ` +
+      "simples em Inglês, depois traduza para Português, e devolva **apenas** no seguinte formato JSON, sem explicações " +
+      "adicionais, sem comentários, sem texto fora do JSON:\n\n" +
+      "{ \"Word\": \"WORD\", \"English\": \"ENGLISH\", \"Portuguese\": \"PORTUGUESE\" }";
+  }
+
+  // =========================================================
+  // OPENAI — áudio
+  // =========================================================
+  async function playCardAudio(card){
+    if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
+      showToast("Configure sua chave da OpenAI em Configurações para ouvir o áudio.");
+      return;
+    }
+    if(state.audioCache[card.Word]){
+      new Audio(state.audioCache[card.Word]).play();
+      return;
+    }
+    showLoading("Gerando áudio…");
+    try{
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "Authorization":"Bearer " + openaiApiKey
+        },
+        body: JSON.stringify({
+          model:"gpt-4o-mini-tts",
+          voice:"alloy",
+          input: card.English,
+          response_format:"mp3"
+        })
+      });
+      if(!res.ok){
+        const errText = await res.text();
+        throw new Error("Erro ao gerar áudio: " + errText.slice(0,150));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      state.audioCache[card.Word] = url;
+      new Audio(url).play();
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  // =========================================================
+  // CARDS — gerenciar
+  // =========================================================
+  function renderManageView(){
+    const keys = Object.keys(state.cards);
+    $("deck-count-tag").textContent = `${keys.length} cards`;
+    $("nav-card-count").textContent = keys.length;
+    $("empty-msg").classList.toggle("hidden", keys.length > 0);
+
+    const grid = $("card-grid");
+    grid.innerHTML = "";
+    keys.forEach(key => {
+      const card = state.cards[key];
+      const acc = card.TotalHits > 0 ? Math.round((card.ScoreHits / card.TotalHits) * 100) : null;
+      const tile = document.createElement("div");
+      tile.className = "study-card";
+      tile.innerHTML = `
+        <div class="study-card-title">${escapeHtml(card.Word)}</div>
+        <div class="study-card-meta">${escapeHtml(card.English)}<br><em>${escapeHtml(card.Portuguese)}</em></div>
+        <div class="card-metrics">
+          <span>${acc === null ? "sem dados" : "precisão " + acc + "%"}</span>
+          <span>${card.TotalHits} revisões</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-edit btn-sm" data-action="refresh">🔄 Nova frase</button>
+          <button class="btn btn-reject btn-sm" data-action="delete">🗑️ Excluir</button>
+        </div>
+      `;
+      tile.querySelector('[data-action="refresh"]').addEventListener("click", () => refreshCard(key));
+      tile.querySelector('[data-action="delete"]').addEventListener("click", () => deleteCard(key));
+      grid.appendChild(tile);
+    });
+  }
+
+  async function refreshCard(key){
+    const card = state.cards[key];
+    showLoading("Gerando nova frase…");
+    try{
+      const raw = await openaiChat(promptRefreshCard(card));
+      const refreshed = extractJson(raw);
+      card.English = refreshed.English;
+      card.Portuguese = refreshed.Portuguese;
+      delete state.audioCache[card.Word];
+      await dbPatch(`/users/${state.uid}/Cards/${key}`, { English: card.English, Portuguese: card.Portuguese });
+      renderManageView();
+      showToast("Frase atualizada.");
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  async function deleteCard(key){
+    const card = state.cards[key];
+    if(!confirm(`Excluir o card "${card.Word}"?`)) return;
+    showLoading("Excluindo…");
+    try{
+      delete state.cards[key];
+      await dbDelete(`/users/${state.uid}/Cards/${key}`);
+      renderManageView();
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  function renderPendingList(){
+    const list = $("pending-list");
+    list.innerHTML = "";
+    state.pendingWords.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "inbox-item";
+      row.innerHTML = `<span class="inbox-text">${escapeHtml(item.value)}</span>
+        <button class="inbox-remove" title="Remover">✕</button>`;
+      row.querySelector("button").addEventListener("click", () => {
+        state.pendingWords = state.pendingWords.filter(p => p.id !== item.id);
+        renderPendingList();
+      });
+      list.appendChild(row);
+    });
+    $("pending-count-tag").textContent = `${state.pendingWords.length} pendentes`;
+    $("btn-generate-cards").classList.toggle("hidden", state.pendingWords.length === 0);
+  }
+
+  function addPendingWord(value){
+    const v = (value || "").trim();
+    if(!v) return;
+    state.pendingWords.push({ id: Math.random().toString(36).slice(2), value: v });
+    renderPendingList();
+  }
+
+  async function suggestTenWords(){
+    showLoading("Pedindo sugestões para a IA…");
+    try{
+      const existing = Object.values(state.cards).map(c => c.Word);
+      const raw = await openaiChat(promptSuggestTenWords(existing));
+      const result = extractJson(raw);
+      (result.Words || []).forEach(w => addPendingWord(w));
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  async function generatePendingCards(){
+    const words = state.pendingWords.map(p => p.value.trim()).filter(Boolean);
+    if(words.length === 0) return;
+
+    showLoading("Gerando frases com a IA…");
+    try{
+      const existingWords = Object.values(state.cards).map(c => c.Word.toLowerCase());
+      const wordsToCreate = words.filter(w => !existingWords.includes(w.toLowerCase()));
+
+      if(wordsToCreate.length === 0){
+        showToast("Essas palavras já existem no seu baralho.");
+        state.pendingWords = [];
+        renderPendingList();
+        return;
       }
 
-      var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/Anki.loader.js";
-      var config = {
-        arguments: [],
-        dataUrl: buildUrl + "/Anki.data",
-        frameworkUrl: buildUrl + "/Anki.framework.js",
-        codeUrl: buildUrl + "/Anki.wasm",
-        streamingAssetsUrl: "StreamingAssets",
-        companyName: "Thurgh",
-        productName: "Anki",
-        productVersion: "0.1.0",
-        showBanner: unityShowBanner,
-      };
+      const raw = await openaiChat(promptGenerateCards(wordsToCreate));
+      const result = extractJson(raw);
+      const newCards = result.Phrases || [];
 
-      // Forçar fullscreen no desktop e mobile
-      var canvas = document.querySelector("#unity-canvas");
-      var container = document.querySelector("#unity-container");
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-      container.className = "unity-mobile";
+      const patchBody = {};
+      newCards.forEach(nc => {
+        const key = wordKey(nc.Word);
+        const card = blankCard(nc.Word.toLowerCase(), nc.English, nc.Portuguese);
+        state.cards[key] = card;
+        patchBody[key] = card;
+      });
 
-      document.querySelector("#unity-loading-bar").style.display = "block";
+      await dbPatch(`/users/${state.uid}/Cards`, patchBody);
+      state.pendingWords = [];
+      renderPendingList();
+      renderManageView();
+      showToast(`${newCards.length} card(s) adicionado(s).`);
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
 
-      var script = document.createElement("script");
-      script.src = loaderUrl;
-      script.onload = () => {
-        createUnityInstance(canvas, config, (progress) => {
-          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-        }).then((unityInstance) => {
-          document.querySelector("#unity-loading-bar").style.display = "none";
-        }).catch((message) => {
-          alert(message);
-        });
-      };
-      document.body.appendChild(script);
-    </script>
-  </body>
+  // =========================================================
+  // ESTATÍSTICAS
+  // =========================================================
+  function renderStatsView(){
+    const cards = Object.values(state.cards);
+    const totalCards = cards.length;
+    const totalReviews = cards.reduce((s,c) => s + (c.TotalHits || 0), 0);
+    const totalCorrect = cards.reduce((s,c) => s + (c.CorrectHits || 0) + (c.CorrectPlusHits || 0), 0);
+    const accuracy = totalReviews > 0 ? Math.round((totalCorrect / totalReviews) * 100) : 0;
+    const mastered = cards.filter(c => c.TotalHits >= 5 && (c.ScoreHits / Math.max(1,c.TotalHits)) >= 0.8).length;
+
+    $("stat-total-cards").textContent = totalCards;
+    $("stat-total-reviews").textContent = totalReviews;
+    $("stat-accuracy").textContent = accuracy + "%";
+    $("mastered-tag").textContent = `${mastered} dominados`;
+
+    // agrega histórico por dia
+    const byDay = {};
+    cards.forEach(c => (c.History || []).forEach(h => {
+      const day = h.Date.slice(0,10);
+      byDay[day] = (byDay[day] || 0) + 1;
+    }));
+
+    // sequência de dias consecutivos até hoje
+    let streak = 0;
+    let cursor = new Date();
+    while(true){
+      const key = cursor.toISOString().slice(0,10);
+      if(byDay[key]){
+        streak++;
+        cursor.setDate(cursor.getDate() - 1);
+      } else break;
+    }
+    $("stat-streak").textContent = streak;
+
+    // gráfico últimos 7 dias
+    const days = [];
+    for(let i = 6; i >= 0; i--){
+      const dt = new Date();
+      dt.setDate(dt.getDate() - i);
+      const key = dt.toISOString().slice(0,10);
+      days.push({
+        label: dt.toLocaleDateString("pt-BR", { weekday:"short" }).replace(".", ""),
+        count: byDay[key] || 0
+      });
+    }
+    const maxCount = Math.max(1, ...days.map(d => d.count));
+    const chart = $("bar-chart");
+    chart.innerHTML = "";
+    days.forEach(d => {
+      const col = document.createElement("div");
+      col.className = "bar-col";
+      const heightPct = Math.max(4, Math.round((d.count / maxCount) * 100));
+      col.innerHTML = `<div class="bar-fill" style="height:${heightPct}%"></div><div class="bar-label">${escapeHtml(d.label)}</div>`;
+      chart.appendChild(col);
+    });
+
+    // saúde por card, pior primeiro
+    const keys = Object.keys(state.cards);
+    const sorted = keys.slice().sort((a,b) => {
+      const ca = state.cards[a], cb = state.cards[b];
+      const pa = ca.TotalHits > 0 ? ca.ScoreHits/ca.TotalHits : -1;
+      const pb = cb.TotalHits > 0 ? cb.ScoreHits/cb.TotalHits : -1;
+      return pa - pb;
+    });
+    const healthList = $("health-list");
+    healthList.innerHTML = "";
+    if(sorted.length === 0){
+      healthList.innerHTML = '<p class="empty-msg">Sem cards para mostrar ainda.</p>';
+    }
+    sorted.forEach(key => {
+      const c = state.cards[key];
+      const row = document.createElement("div");
+      row.className = "health-row";
+      let dotClass = "health-neutral", label = "sem dados";
+      if(c.TotalHits > 0){
+        const pct = Math.round((c.ScoreHits / c.TotalHits) * 100);
+        label = pct + "%";
+        if(pct < 40) dotClass = "health-risco";
+        else if(pct < 70) dotClass = "health-atencao";
+        else dotClass = "health-ok";
+      }
+      row.innerHTML = `<span>${escapeHtml(c.Word)}</span><span class="health-dot ${dotClass}">${label}</span>`;
+      healthList.appendChild(row);
+    });
+  }
+
+  // =========================================================
+  // NAVEGAÇÃO
+  // =========================================================
+  function showApp(){
+    $("screen-login").classList.add("hidden");
+    $("app-shell").classList.remove("hidden");
+    $("sidebar-email").textContent = state.email;
+    $("settings-email").textContent = state.email;
+  }
+
+  function switchView(viewId){
+    document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === viewId));
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === viewId));
+    closeMobileSidebar();
+    if(viewId === "view-manage") renderManageView();
+    if(viewId === "view-stats") renderStatsView();
+    if(viewId === "view-settings") $("input-openai-key").value = "";
+  }
+
+  function openMobileSidebar(){
+    $("sidebar").classList.add("mobile-open");
+    $("sidebar-backdrop").classList.add("active");
+  }
+  function closeMobileSidebar(){
+    $("sidebar").classList.remove("mobile-open");
+    $("sidebar-backdrop").classList.remove("active");
+  }
+
+  async function enterApp(){
+    showLoading("Carregando seu baralho…");
+    try{
+      await ensureProfile();
+      await loadUserCards();
+      showApp();
+      switchView("view-study");
+      loadNextCard();
+      $("nav-card-count").textContent = Object.keys(state.cards).length;
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  function logout(){
+    state.idToken = null;
+    state.uid = null;
+    state.email = null;
+    state.cards = {};
+    state.currentCardKey = null;
+    state.audioCache = {};
+    $("app-shell").classList.add("hidden");
+    $("screen-login").classList.remove("hidden");
+    closeMobileSidebar();
+  }
+
+  // =========================================================
+  // EVENTOS
+  // =========================================================
+  $("btn-login").addEventListener("click", async () => {
+    const email = $("login-email").value.trim();
+    const password = $("login-password").value;
+    $("login-error").textContent = "";
+    if(!email || !password){ $("login-error").textContent = "Preencha email e senha."; return; }
+    showLoading("Entrando…");
+    try{
+      await login(email, password);
+      await enterApp();
+    }catch(err){
+      $("login-error").textContent = translateAuthError(err.message);
+    }finally{
+      hideLoading();
+    }
+  });
+
+  $("btn-signup").addEventListener("click", async () => {
+    const email = $("login-email").value.trim();
+    const password = $("login-password").value;
+    $("login-error").textContent = "";
+    if(!email || !password){ $("login-error").textContent = "Preencha email e senha."; return; }
+    if(password.length < 6){ $("login-error").textContent = "A senha precisa ter ao menos 6 caracteres."; return; }
+    showLoading("Criando conta…");
+    try{
+      await signup(email, password);
+      await enterApp();
+    }catch(err){
+      $("login-error").textContent = translateAuthError(err.message);
+    }finally{
+      hideLoading();
+    }
+  });
+
+  $("link-forgot").addEventListener("click", async () => {
+    const email = $("login-email").value.trim();
+    if(!email){ $("login-error").textContent = "Digite seu email para redefinir a senha."; return; }
+    showLoading("Enviando email…");
+    try{
+      await forgotPassword(email);
+      showToast("Email de redefinição enviado para " + email);
+    }catch(err){
+      $("login-error").textContent = translateAuthError(err.message);
+    }finally{
+      hideLoading();
+    }
+  });
+
+  $("btn-logout").addEventListener("click", logout);
+  $("btn-logout-2").addEventListener("click", logout);
+  $("btn-mobile-logout").addEventListener("click", logout);
+
+  document.querySelectorAll(".nav-item").forEach(item => {
+    item.addEventListener("click", () => switchView(item.dataset.view));
+  });
+
+  $("btn-hamburger").addEventListener("click", openMobileSidebar);
+  $("sidebar-backdrop").addEventListener("click", closeMobileSidebar);
+
+  $("btn-turn").addEventListener("click", turnCard);
+  $("btn-wrong").addEventListener("click", () => answerCard(-1));
+  $("btn-warning").addEventListener("click", () => answerCard(0));
+  $("btn-correct").addEventListener("click", () => answerCard(1));
+  $("btn-correct-plus").addEventListener("click", () => answerCard(3));
+  $("btn-sound").addEventListener("click", () => { if(state.currentCardKey) playCardAudio(state.cards[state.currentCardKey]); });
+
+  $("btn-add-word").addEventListener("click", () => {
+    addPendingWord($("input-new-word").value);
+    $("input-new-word").value = "";
+    $("input-new-word").focus();
+  });
+  $("input-new-word").addEventListener("keydown", (e) => {
+    if(e.key === "Enter"){
+      addPendingWord($("input-new-word").value);
+      $("input-new-word").value = "";
+    }
+  });
+  $("btn-suggest-ten").addEventListener("click", suggestTenWords);
+  $("btn-generate-cards").addEventListener("click", generatePendingCards);
+
+  $("btn-save-settings").addEventListener("click", () => {
+    const val = $("input-openai-key").value.trim();
+    if(val) openaiApiKey = val;
+    showToast("Configurações salvas para esta sessão.");
+  });
+
+  ["login-email","login-password"].forEach(id=>{
+    $(id).addEventListener("keydown", (e) => { if(e.key === "Enter") $("btn-login").click(); });
+  });
+
+})();
+</script>
+
+</body>
 </html>
