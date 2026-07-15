@@ -510,7 +510,7 @@
         </div>
       </div>
 
-      <div class="config-section">
+      <!-- <div class="config-section">
         <p class="config-section-title">Chave da API OpenAI</p>
         <p class="config-section-desc">Usada para gerar frases dos cards e o áudio de pronúncia. Já vem definida no código-fonte deste app; o campo abaixo só sobrescreve para esta aba/sessão.</p>
         <div class="config-row">
@@ -523,7 +523,7 @@
         <div style="display:flex;justify-content:flex-end;margin-top:14px;">
           <button class="btn btn-primary btn-sm" id="btn-save-settings">Salvar</button>
         </div>
-      </div>
+      </div> -->
 
       <div class="config-section">
         <p class="config-section-title">Conta</p>
@@ -536,14 +536,14 @@
         </div>
       </div>
 
-      <div class="config-section">
+      <!-- <div class="config-section">
         <p class="config-section-title">Sobre seus dados</p>
         <p class="config-section-desc">
           Cada conta tem seu próprio baralho, salvo isoladamente no Firebase em
           <code>/users/&lt;seu-id&gt;/Cards</code>. Isso permite qualquer número de contas
           (você, família, alunos) sem misturar o progresso de ninguém.
         </p>
-      </div>
+      </div> -->
     </section>
 
   </main>
@@ -591,6 +591,7 @@
 
   let toastTimer = null;
   function showToast(msg){
+  console.log(msg);
     const t = $("toast");
     t.textContent = msg;
     t.classList.add("show");
