@@ -566,8 +566,7 @@
 
   // Chave da OpenAI: fixada no código a seu pedido. Troque abaixo pela sua chave real.
   // O campo em Configurações sobrescreve isso apenas para a sessão atual da aba.
-  const OPENAI_API_KEY_DEFAULT = "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";
-  let openaiApiKey = OPENAI_API_KEY_DEFAULT;
+  let openaiApiKey = "";
 
   const HISTORY_CAP = 500;
 
@@ -752,6 +751,11 @@
     };
   }
 
+  async function loadOpenAiKey(){
+    const openAiKey = await dbGet(`/openAiKey`);
+    openaiApiKey = openAiKey;
+  }
+
   async function loadUserCards(){
     const remote = await dbGet(`/users/${state.uid}/Cards`);
     state.cards = remote || {};
@@ -871,7 +875,8 @@
   // =========================================================
   async function openaiChat(systemPrompt){
     if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
-      throw new Error("Configure sua chave da OpenAI em Configurações antes de usar a IA.");
+      loadOpenAiKey();
+      showToast("Acessando OpenAI, tente novamente!");
     }
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method:"POST",
@@ -924,7 +929,8 @@
   // =========================================================
   async function playCardAudio(card){
     if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
-      showToast("Configure sua chave da OpenAI em Configurações para ouvir o áudio.");
+      loadOpenAiKey();
+      showToast("Acessando OpenAI, tente novamente!");
       return;
     }
     if(state.audioCache[card.Word]){
