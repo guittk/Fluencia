@@ -1,5 +1,0 @@
-1;the;The sky is blue.;"O céu está azul.
-2;be;To be or not to be, that is the question.;Ser ou não ser, eis a questão.
-3;to;I want to go to the park.;Eu quero ir ao parque.
-4;of;The color of the car is red.;A cor do carro é vermelha.
-5;and;I like to read and write.;Eu gosto de ler e escrever.
