@@ -114,6 +114,9 @@ body{
   border:1px solid var(--line); padding:7px 13px; border-radius:20px; white-space:nowrap;
 }
 
+#view-study.active{ display:flex; flex-direction:column; min-height:100%; }
+.study-stage{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-bottom:16px; }
+
 .hero-card{
   background: linear-gradient(160deg, var(--surface) 0%, var(--surface-hi) 100%);
   border:1px solid var(--line-strong);
@@ -121,7 +124,9 @@ body{
   padding: 34px 36px 30px;
   position:relative;
   overflow:hidden;
-  margin-bottom: 22px;
+  width:100%;
+  max-width:500px;
+  margin:0 auto;
 }
 .hero-glow{
   position:absolute; inset:-40% -20% auto auto; width:340px; height:340px;
@@ -266,6 +271,7 @@ body{
   border-radius:50%; display:flex; align-items:center; justify-content:center;
   font-family:var(--mono); font-size:13px; font-weight:600; color:var(--sage); background:var(--sage-soft);
 }
+.face-sound-btn{ position:absolute; top:14px; left:16px; }
 .card-controls{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:20px; position:relative; z-index:1; }
 .card-controls .btn{ flex:1 1 auto; min-width:120px; justify-content:center; }
 .btn-wrong{ background:rgba(180,106,92,0.16); color:var(--coral); border:1px solid rgba(180,106,92,0.4); }

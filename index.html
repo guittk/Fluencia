@@ -86,45 +86,47 @@
         <select class="config-input" id="study-deck-select" style="min-width:220px;"></select>
       </div>
 
-      <div class="hero-card" id="study-hero">
-        <div class="hero-glow"></div>
+      <div class="study-stage">
+        <div class="hero-card" id="study-hero">
+          <div class="hero-glow"></div>
 
-        <div style="display:flex; gap:8px; margin-bottom:16px; position:relative; z-index:1; flex-wrap:wrap;">
-          <span class="tag tag-sage" id="study-deck-lang-tag">—</span>
-          <span class="tag tag-gold" id="study-deck-theme-tag">—</span>
-        </div>
+          <div style="display:flex; gap:8px; margin-bottom:16px; position:relative; z-index:1; flex-wrap:wrap;">
+            <span class="tag tag-sage" id="study-deck-lang-tag">—</span>
+            <span class="tag tag-gold" id="study-deck-theme-tag">—</span>
+          </div>
 
-        <div class="flashcard-wrap">
-          <div class="flashcard-inner" id="flashcard-inner">
-            <div class="face front">
-              <p class="eyebrow">Palavra</p>
-              <div class="word-text" id="card-word">—</div>
+          <div class="flashcard-wrap">
+            <div class="flashcard-inner" id="flashcard-inner">
+              <div class="face front">
+                <p class="eyebrow">Palavra</p>
+                <div class="word-text" id="card-word">—</div>
+              </div>
+              <div class="face back">
+                <button class="btn-icon face-sound-btn" id="btn-sound" title="Ouvir pronúncia">🔊</button>
+                <div class="postmark-badge" id="postmark-badge">0</div>
+                <p class="eyebrow">Frase</p>
+                <div class="english-text" id="card-phrase">—</div>
+                <div class="portuguese-text" id="card-translation">—</div>
+              </div>
             </div>
-            <div class="face back">
-              <div class="postmark-badge" id="postmark-badge">0</div>
-              <p class="eyebrow">Frase</p>
-              <div class="english-text" id="card-phrase">—</div>
-              <div class="portuguese-text" id="card-translation">—</div>
-            </div>
+          </div>
+
+          <div class="card-controls" id="controls-turn">
+            <button class="btn btn-primary" id="btn-turn" style="flex:1 1 100%;">Virar carta</button>
+          </div>
+
+          <div class="card-controls hidden" id="controls-answer">
+            <button class="btn btn-wrong" id="btn-wrong">✗ Errei</button>
+            <button class="btn btn-warn" id="btn-warning">≈ Quase</button>
+            <button class="btn btn-correct" id="btn-correct">✓ Acertei</button>
+            <button class="btn btn-correct-plus" id="btn-correct-plus">✓✓ Fácil</button>
           </div>
         </div>
 
-        <div class="card-controls" id="controls-turn">
-          <button class="btn btn-primary" id="btn-turn" style="flex:1 1 100%;">Virar carta</button>
+        <div class="panel hidden" id="study-empty-state" style="text-align:center; padding:40px 24px; max-width:500px; width:100%;">
+          <p class="view-desc" style="margin:0 0 16px;">Você ainda não tem nenhum baralho. Crie um baralho para começar a estudar.</p>
+          <button class="btn btn-primary btn-sm" id="btn-goto-decks">+ Criar meu primeiro baralho</button>
         </div>
-
-        <div class="card-controls hidden" id="controls-answer">
-          <button class="btn btn-wrong" id="btn-wrong">✗ Errei</button>
-          <button class="btn btn-warn" id="btn-warning">≈ Quase</button>
-          <button class="btn btn-correct" id="btn-correct">✓ Acertei</button>
-          <button class="btn btn-correct-plus" id="btn-correct-plus">✓✓ Fácil</button>
-          <button class="btn btn-ghost" id="btn-sound">🔊 Ouvir</button>
-        </div>
-      </div>
-
-      <div class="panel hidden" id="study-empty-state" style="text-align:center; padding:40px 24px;">
-        <p class="view-desc" style="margin:0 0 16px;">Você ainda não tem nenhum baralho. Crie um baralho para começar a estudar.</p>
-        <button class="btn btn-primary btn-sm" id="btn-goto-decks">+ Criar meu primeiro baralho</button>
       </div>
     </section>
 
