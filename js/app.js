@@ -7,11 +7,27 @@
   const FIREBASE_API_KEY = "AIzaSyAQqB__M-gKZWHS4zQ1eIA-X6rGqzVtr0I";
   const FIREBASE_DB_URL = "https://anki-71f4f-default-rtdb.firebaseio.com";
 
-  // Chave da OpenAI: fixada no código a seu pedido. Troque abaixo pela sua chave real.
-  // O campo em Configurações sobrescreve isso apenas para a sessão atual da aba.
+  // Chave da OpenAI: carregada do Firebase (/openAiKey) no primeiro uso.
   let openaiApiKey = "";
 
   const HISTORY_CAP = 500;
+
+  const LANGUAGES = [
+    { code:"en", label:"Inglês" },
+    { code:"es", label:"Espanhol" },
+    { code:"fr", label:"Francês" },
+    { code:"de", label:"Alemão" },
+    { code:"it", label:"Italiano" },
+    { code:"ja", label:"Japonês" },
+    { code:"zh", label:"Mandarim" },
+    { code:"ko", label:"Coreano" },
+    { code:"ru", label:"Russo" },
+    { code:"nl", label:"Holandês" }
+  ];
+  function languageLabel(code){
+    const l = LANGUAGES.find(l => l.code === code);
+    return l ? l.label : (code || "—");
+  }
 
   // =========================================================
   // STATE
@@ -20,10 +36,15 @@
     idToken: null,
     uid: null,
     email: null,
-    cards: {},        // wordKey -> card object
+    decks: {},          // deckId -> { Name, Language, Theme, CreatedAt, UpdatedAt, Cards:{ wordKey -> card } }
+    currentDeckId: null, // baralho selecionado na tela Estudar
+    detailDeckId: null,  // baralho aberto na tela de detalhe (gerenciar cards)
+    statsDeckId: "all",  // baralho selecionado na tela Estatísticas ("all" = todos)
     currentCardKey: null,
-    pendingWords: [],  // [{id, value}]
-    audioCache: {},    // word -> object URL
+    pendingWords: [],    // [{id, value}]
+    audioCache: {},      // "deckId::word" -> object URL
+    deckModalMode: null, // "create" | "edit"
+    deckModalEditId: null,
   };
 
   // =========================================================
@@ -51,6 +72,26 @@
     return String(str).replace(/[&<>"']/g, c => ({
       "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
     }[c]));
+  }
+
+  function showConfirm({ title, desc, confirmLabel }){
+    return new Promise((resolve) => {
+      $("confirm-modal-title").textContent = title || "Confirmar ação";
+      $("confirm-modal-desc").textContent = desc || "";
+      $("confirm-modal-confirm").textContent = confirmLabel || "Confirmar";
+      $("confirm-modal").classList.remove("hidden");
+
+      function cleanup(result){
+        $("confirm-modal").classList.add("hidden");
+        $("confirm-modal-confirm").removeEventListener("click", onConfirm);
+        $("confirm-modal-cancel").removeEventListener("click", onCancel);
+        resolve(result);
+      }
+      function onConfirm(){ cleanup(true); }
+      function onCancel(){ cleanup(false); }
+      $("confirm-modal-confirm").addEventListener("click", onConfirm);
+      $("confirm-modal-cancel").addEventListener("click", onCancel);
+    });
   }
 
   // =========================================================
@@ -131,12 +172,12 @@
 
   // =========================================================
   // FIREBASE REALTIME DATABASE
-  //   Estrutura profissional, escopada por usuário:
-  //   /users/{uid}/Profile        -> { Email, CreatedAt, LastLogin }
-  //   /users/{uid}/Cards/{wordKey}-> { Word, English, Portuguese, ScoreHits, ... }
-  //   Cada card já nasce dentro do usuário — nenhum dado é compartilhado
-  //   entre contas, então qualquer número de pessoas pode usar o app
-  //   sem que o progresso de uma afete o baralho da outra.
+  //   Estrutura, escopada por usuário:
+  //   /users/{uid}/Profile                       -> { Email, CreatedAt, LastLogin }
+  //   /users/{uid}/Decks/{deckId}                 -> { Name, Language, Theme, CreatedAt, UpdatedAt }
+  //   /users/{uid}/Decks/{deckId}/Cards/{wordKey} -> { Word, Phrase, Translation, ScoreHits, ... }
+  //   Cada baralho tem idioma e tema próprios, usados para orientar a IA
+  //   na geração das frases. Nenhum dado é compartilhado entre contas.
   //   Regra de segurança sugerida no Firebase:
   //     "users": { "$uid": { ".read/.write": "auth.uid === $uid" } }
   // =========================================================
@@ -183,15 +224,30 @@
       .replace(/^_+|_+$/g, "") || ("w" + Date.now());
   }
 
-  function blankCard(word, english, portuguese){
+  function deckKey(){
+    return "d" + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  }
+
+  function blankCard(word, phrase, translation){
     return {
       Word: word,
-      English: english,
-      Portuguese: portuguese,
+      Phrase: phrase,
+      Translation: translation,
       ScoreHits: 0, TotalHits: 0,
       CorrectHits: 0, CorrectPlusHits: 0, WarningHits: 0, WrongHits: 0,
       CreatedAt: new Date().toISOString(),
       History: []
+    };
+  }
+
+  function blankDeck(name, language, theme){
+    return {
+      Name: name,
+      Language: language,
+      Theme: theme || "",
+      CreatedAt: new Date().toISOString(),
+      UpdatedAt: new Date().toISOString(),
+      Cards: {}
     };
   }
 
@@ -200,9 +256,20 @@
     openaiApiKey = openAiKey;
   }
 
-  async function loadUserCards(){
-    const remote = await dbGet(`/users/${state.uid}/Cards`);
-    state.cards = remote || {};
+  async function ensureOpenAiKey(){
+    if(openaiApiKey && openaiApiKey.indexOf("COLE-SUA-CHAVE") === -1) return openaiApiKey;
+    try{
+      await loadOpenAiKey();
+    }catch(err){
+      console.warn(err);
+    }
+    return openaiApiKey;
+  }
+
+  async function loadUserDecks(){
+    const remote = await dbGet(`/users/${state.uid}/Decks`);
+    state.decks = remote || {};
+    Object.values(state.decks).forEach(d => { if(!d.Cards) d.Cards = {}; });
   }
 
   async function ensureProfile(){
@@ -222,189 +289,139 @@
   }
 
   // =========================================================
-  // SCORING (mesma matemática do app original)
+  // BARALHOS — CRUD
   // =========================================================
-  function pickNextCard(){
-    const keys = Object.keys(state.cards);
-    const weights = keys.map(k => 1 / Math.max(1, state.cards[k].ScoreHits || 0));
-    const total = weights.reduce((a,b)=>a+b, 0);
-    const probs = weights.map(w => w/total);
-    const r = Math.random();
-    let cumulative = 0;
-    for(let i=0;i<probs.length;i++){
-      cumulative += probs[i];
-      if(r < cumulative) return keys[i];
-    }
-    return keys[keys.length-1];
+  async function createDeck(name, language, theme){
+    const id = deckKey();
+    const deck = blankDeck(name, language, theme);
+    state.decks[id] = deck;
+    await dbPut(`/users/${state.uid}/Decks/${id}`, deck);
+    return id;
   }
 
-  function clampCard(card){
-    if(card.TotalHits < 0) card.TotalHits = 0;
-    if(card.ScoreHits < 0) card.ScoreHits = 0;
-    if(card.ScoreHits > card.TotalHits) card.ScoreHits = card.TotalHits;
+  async function updateDeckMeta(id, patch){
+    const payload = Object.assign({}, patch, { UpdatedAt: new Date().toISOString() });
+    Object.assign(state.decks[id], payload);
+    await dbPatch(`/users/${state.uid}/Decks/${id}`, payload);
   }
 
-  async function answerCard(sum){
-    setAnswerButtonsEnabled(false);
-    const key = state.currentCardKey;
-    const card = state.cards[key];
+  async function deleteDeck(id){
+    delete state.decks[id];
+    await dbDelete(`/users/${state.uid}/Decks/${id}`);
+  }
 
-    card.ScoreHits += sum;
-    card.TotalHits += sum > 1 ? sum : 1;
+  function populateLanguageSelect(selectEl){
+    selectEl.innerHTML = "";
+    LANGUAGES.forEach(l => {
+      const opt = document.createElement("option");
+      opt.value = l.code;
+      opt.textContent = l.label;
+      selectEl.appendChild(opt);
+    });
+  }
 
-    if(sum === 0) card.WarningHits += 1;
-    else if(sum < 0) card.WrongHits += 1;
-    else if(sum === 1) card.CorrectHits += 1;
-    else card.CorrectPlusHits += 1;
+  function renderDecksView(){
+    const ids = Object.keys(state.decks);
+    $("nav-deck-count").textContent = ids.length;
+    $("deck-empty-msg").classList.toggle("hidden", ids.length > 0);
 
-    clampCard(card);
+    const grid = $("deck-grid");
+    grid.innerHTML = "";
+    ids.forEach(id => {
+      const deck = state.decks[id];
+      const cardCount = Object.keys(deck.Cards || {}).length;
+      const tile = document.createElement("div");
+      tile.className = "study-card deck-card";
+      tile.innerHTML = `
+        <div class="study-card-title">${escapeHtml(deck.Name)}</div>
+        <div class="deck-card-tags">
+          <span class="tag tag-sage">${escapeHtml(languageLabel(deck.Language))}</span>
+          <span class="tag tag-gold" title="${escapeHtml(deck.Theme || "sem tema")}">${escapeHtml(deck.Theme || "sem tema")}</span>
+        </div>
+        <div class="card-metrics"><span>${cardCount} card(s)</span></div>
+        <div class="deck-card-actions">
+          <button class="btn btn-primary btn-sm" data-action="open" title="Abrir">Abrir</button>
+          <button class="btn btn-edit btn-sm" data-action="edit" title="Editar">✏️ Editar</button>
+          <button class="btn btn-reject btn-sm" data-action="delete" title="Excluir">🗑️ Excluir</button>
+        </div>
+      `;
+      tile.querySelector('[data-action="open"]').addEventListener("click", () => openDeckDetail(id));
+      tile.querySelector('[data-action="edit"]').addEventListener("click", () => openDeckModal("edit", id));
+      tile.querySelector('[data-action="delete"]').addEventListener("click", () => confirmDeleteDeck(id));
+      grid.appendChild(tile);
+    });
+  }
 
-    if(!card.History) card.History = [];
-    card.History.push({ Date: new Date().toISOString(), Sum: sum });
-    if(card.History.length > HISTORY_CAP){
-      card.History.splice(0, card.History.length - HISTORY_CAP);
-    }
-
+  async function confirmDeleteDeck(id){
+    const deck = state.decks[id];
+    if(!deck) return;
+    const cardCount = Object.keys(deck.Cards || {}).length;
+    const ok = await showConfirm({
+      title: "Excluir baralho",
+      desc: `Excluir o baralho "${deck.Name}" e ${cardCount === 0 ? "seus cards" : `seus ${cardCount} card(s)`}? Essa ação não pode ser desfeita.`,
+      confirmLabel: "Excluir baralho"
+    });
+    if(!ok) return;
+    showLoading("Excluindo baralho…");
     try{
-      await dbPut(`/users/${state.uid}/Cards/${key}`, card);
+      await deleteDeck(id);
+      if(state.currentDeckId === id) state.currentDeckId = null;
+      if(state.detailDeckId === id){
+        state.detailDeckId = null;
+        switchView("view-decks");
+      }else{
+        renderDecksView();
+      }
+      populateStudyDeckSelect();
+      populateStatsDeckSelect();
+      showToast("Baralho excluído.");
     }catch(err){
       showToast(err.message);
+    }finally{
+      hideLoading();
     }
-
-    setTimeout(() => loadNextCard(), 200);
   }
 
-  function setAnswerButtonsEnabled(enabled){
-    ["btn-wrong","btn-warning","btn-correct","btn-correct-plus","btn-sound"].forEach(id=>{
-      $(id).disabled = !enabled;
-    });
-  }
-
-  // =========================================================
-  // ESTUDAR — render
-  // =========================================================
-  function loadNextCard(){
-    $("flashcard-inner").classList.remove("flipped");
-    $("controls-answer").classList.add("hidden");
-    $("controls-turn").classList.remove("hidden");
-
-    const keys = Object.keys(state.cards);
-    $("deck-status").textContent = `Baralho: ${keys.length} card(s)`;
-
-    if(keys.length === 0){
-      state.currentCardKey = null;
-      $("card-word").textContent = "Sem cards ainda";
-      $("controls-turn").classList.add("hidden");
-      return;
+  function openDeckModal(mode, id){
+    state.deckModalMode = mode;
+    state.deckModalEditId = id || null;
+    $("deck-modal-title").textContent = mode === "edit" ? "Editar baralho" : "Novo baralho";
+    if(mode === "edit"){
+      const deck = state.decks[id];
+      $("deck-input-name").value = deck.Name;
+      $("deck-input-language").value = deck.Language;
+      $("deck-input-theme").value = deck.Theme || "";
+    }else{
+      $("deck-input-name").value = "";
+      $("deck-input-language").value = LANGUAGES[0].code;
+      $("deck-input-theme").value = "";
     }
-
-    state.currentCardKey = pickNextCard();
-    const card = state.cards[state.currentCardKey];
-    $("card-word").textContent = card.Word;
-    $("card-english").textContent = card.English;
-    $("card-portuguese").textContent = card.Portuguese;
-    $("postmark-badge").textContent = card.ScoreHits;
+    $("deck-modal").classList.remove("hidden");
+    $("deck-input-name").focus();
+  }
+  function closeDeckModal(){
+    $("deck-modal").classList.add("hidden");
   }
 
-  function turnCard(){
-    if(!state.currentCardKey) return;
-    $("flashcard-inner").classList.add("flipped");
-    $("controls-turn").classList.add("hidden");
-    $("controls-answer").classList.remove("hidden");
-    setAnswerButtonsEnabled(true);
-  }
+  async function saveDeckModal(){
+    const name = $("deck-input-name").value.trim();
+    const language = $("deck-input-language").value;
+    const theme = $("deck-input-theme").value.trim();
+    if(!name){ showToast("Digite um nome para o baralho."); return; }
 
-  // =========================================================
-  // OPENAI — texto
-  // =========================================================
-  async function openaiChat(systemPrompt){
-    if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
-      loadOpenAiKey();
-      showToast("Acessando OpenAI, tente novamente!");
-      return;
-    }
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        "Authorization": "Bearer " + openaiApiKey
-      },
-      body: JSON.stringify({
-        model:"gpt-4o-mini",
-        temperature:0.7,
-        messages:[{ role:"system", content: systemPrompt }]
-      })
-    });
-    const data = await res.json();
-    if(!res.ok){
-      throw new Error((data.error && data.error.message) || "Erro na chamada à OpenAI.");
-    }
-    return data.choices[0].message.content;
-  }
-
-  function extractJson(text){
-    const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-    return JSON.parse(cleaned);
-  }
-
-  function promptGenerateCards(words){
-    return "Pegue a lista de Palavras, gere frases simples em Inglês, depois traduza para Português, " +
-      "e devolva **apenas** no seguinte formato JSON, sem explicações adicionais, sem comentários, sem texto fora do JSON:\n\n" +
-      "{\n  \"Phrases\": [\n    { \"Word\": \"WORD1\", \"English\": \"ENGLISH1\", \"Portuguese\": \"PORTUGUESE1\" }\n  ]\n}\n\n" +
-      "Palavras:\n" + words.join("\n");
-  }
-
-  function promptSuggestTenWords(existingWords){
-    return "Analise a lista de palavras em inglês enviada, escolha as 10 palavras mais usadas em inglês que não " +
-      "estejam na lista e devolva **apenas** no seguinte formato JSON, sem explicações adicionais, sem comentários " +
-      "e sem texto fora do JSON:\n\n" +
-      "{\n  \"Words\": [\n    \"WORD1\",\n    \"WORD2\"\n  ]\n}\n\n" +
-      "Palavras:\n" + existingWords.join("\n");
-  }
-
-  function promptRefreshCard(card){
-    return `Pegue a Palavra, e gere uma frase SIMPLES com a palavra "${card.Word}", mas diferente de "${card.English}", ` +
-      "simples em Inglês, depois traduza para Português, e devolva **apenas** no seguinte formato JSON, sem explicações " +
-      "adicionais, sem comentários, sem texto fora do JSON:\n\n" +
-      "{ \"Word\": \"WORD\", \"English\": \"ENGLISH\", \"Portuguese\": \"PORTUGUESE\" }";
-  }
-
-  // =========================================================
-  // OPENAI — áudio
-  // =========================================================
-  async function playCardAudio(card){
-    if(!openaiApiKey || openaiApiKey.indexOf("COLE-SUA-CHAVE") !== -1){
-      loadOpenAiKey();
-      showToast("Acessando OpenAI, tente novamente!");
-      return;
-    }
-    if(state.audioCache[card.Word]){
-      new Audio(state.audioCache[card.Word]).play();
-      return;
-    }
-    showLoading("Gerando áudio…");
+    showLoading(state.deckModalMode === "edit" ? "Salvando baralho…" : "Criando baralho…");
     try{
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "Authorization":"Bearer " + openaiApiKey
-        },
-        body: JSON.stringify({
-          model:"gpt-4o-mini-tts",
-          voice:"alloy",
-          input: card.English,
-          response_format:"mp3"
-        })
-      });
-      if(!res.ok){
-        const errText = await res.text();
-        throw new Error("Erro ao gerar áudio: " + errText.slice(0,150));
+      if(state.deckModalMode === "edit"){
+        await updateDeckMeta(state.deckModalEditId, { Name: name, Language: language, Theme: theme });
+      }else{
+        await createDeck(name, language, theme);
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      state.audioCache[card.Word] = url;
-      new Audio(url).play();
+      closeDeckModal();
+      renderDecksView();
+      populateStudyDeckSelect();
+      populateStatsDeckSelect();
+      if(state.detailDeckId) renderDeckDetailHeader();
+      showToast("Baralho salvo.");
     }catch(err){
       showToast(err.message);
     }finally{
@@ -413,24 +430,41 @@
   }
 
   // =========================================================
-  // CARDS — gerenciar
+  // DETALHE DO BARALHO — cards
   // =========================================================
-  function renderManageView(){
-    const keys = Object.keys(state.cards);
+  function openDeckDetail(id){
+    state.detailDeckId = id;
+    state.pendingWords = [];
+    switchView("view-deck-detail");
+  }
+
+  function renderDeckDetailHeader(){
+    const deck = state.decks[state.detailDeckId];
+    if(!deck) return;
+    $("detail-deck-name").textContent = deck.Name;
+    $("detail-deck-lang").textContent = languageLabel(deck.Language);
+    $("detail-deck-theme").textContent = deck.Theme || "sem tema";
+    $("input-new-word").placeholder = `Digite uma palavra em ${languageLabel(deck.Language)} e pressione Enter`;
+  }
+
+  function renderCardGrid(){
+    const deck = state.decks[state.detailDeckId];
+    if(!deck) return;
+    const cards = deck.Cards || {};
+    const keys = Object.keys(cards);
     $("deck-count-tag").textContent = `${keys.length} cards`;
-    $("nav-card-count").textContent = keys.length;
     $("empty-msg").classList.toggle("hidden", keys.length > 0);
 
     const grid = $("card-grid");
     grid.innerHTML = "";
     keys.forEach(key => {
-      const card = state.cards[key];
+      const card = cards[key];
       const acc = card.TotalHits > 0 ? Math.round((card.ScoreHits / card.TotalHits) * 100) : null;
       const tile = document.createElement("div");
       tile.className = "study-card";
       tile.innerHTML = `
         <div class="study-card-title">${escapeHtml(card.Word)}</div>
-        <div class="study-card-meta">${escapeHtml(card.English)}<br><em>${escapeHtml(card.Portuguese)}</em></div>
+        <div class="study-card-meta">${escapeHtml(card.Phrase)}<br><em>${escapeHtml(card.Translation)}</em></div>
         <div class="card-metrics">
           <span>${acc === null ? "sem dados" : "precisão " + acc + "%"}</span>
           <span>${card.TotalHits} revisões</span>
@@ -447,16 +481,18 @@
   }
 
   async function refreshCard(key){
-    const card = state.cards[key];
+    const deckId = state.detailDeckId;
+    const deck = state.decks[deckId];
+    const card = deck.Cards[key];
     showLoading("Gerando nova frase…");
     try{
-      const raw = await openaiChat(promptRefreshCard(card));
+      const raw = await openaiChat(promptRefreshCard(card, deck));
       const refreshed = extractJson(raw);
-      card.English = refreshed.English;
-      card.Portuguese = refreshed.Portuguese;
-      delete state.audioCache[card.Word];
-      await dbPatch(`/users/${state.uid}/Cards/${key}`, { English: card.English, Portuguese: card.Portuguese });
-      renderManageView();
+      card.Phrase = refreshed.Phrase;
+      card.Translation = refreshed.Translation;
+      delete state.audioCache[deckId + "::" + card.Word];
+      await dbPatch(`/users/${state.uid}/Decks/${deckId}/Cards/${key}`, { Phrase: card.Phrase, Translation: card.Translation });
+      renderCardGrid();
       showToast("Frase atualizada.");
     }catch(err){
       showToast(err.message);
@@ -466,13 +502,21 @@
   }
 
   async function deleteCard(key){
-    const card = state.cards[key];
-    if(!confirm(`Excluir o card "${card.Word}"?`)) return;
+    const deckId = state.detailDeckId;
+    const deck = state.decks[deckId];
+    const card = deck.Cards[key];
+    const ok = await showConfirm({
+      title: "Excluir card",
+      desc: `Excluir o card "${card.Word}"?`,
+      confirmLabel: "Excluir card"
+    });
+    if(!ok) return;
     showLoading("Excluindo…");
     try{
-      delete state.cards[key];
-      await dbDelete(`/users/${state.uid}/Cards/${key}`);
-      renderManageView();
+      delete deck.Cards[key];
+      await dbDelete(`/users/${state.uid}/Decks/${deckId}/Cards/${key}`);
+      renderCardGrid();
+      renderDecksView();
     }catch(err){
       showToast(err.message);
     }finally{
@@ -506,10 +550,11 @@
   }
 
   async function suggestTenWords(){
+    const deck = state.decks[state.detailDeckId];
     showLoading("Pedindo sugestões para a IA…");
     try{
-      const existing = Object.values(state.cards).map(c => c.Word);
-      const raw = await openaiChat(promptSuggestTenWords(existing));
+      const existing = Object.values(deck.Cards || {}).map(c => c.Word);
+      const raw = await openaiChat(promptSuggestTenWords(existing, deck));
       const result = extractJson(raw);
       (result.Words || []).forEach(w => addPendingWord(w));
     }catch(err){
@@ -520,38 +565,357 @@
   }
 
   async function generatePendingCards(){
+    const deckId = state.detailDeckId;
+    const deck = state.decks[deckId];
     const words = state.pendingWords.map(p => p.value.trim()).filter(Boolean);
     if(words.length === 0) return;
 
     showLoading("Gerando frases com a IA…");
     try{
-      const existingWords = Object.values(state.cards).map(c => c.Word.toLowerCase());
+      deck.Cards = deck.Cards || {};
+      const existingWords = Object.values(deck.Cards).map(c => c.Word.toLowerCase());
       const wordsToCreate = words.filter(w => !existingWords.includes(w.toLowerCase()));
 
       if(wordsToCreate.length === 0){
-        showToast("Essas palavras já existem no seu baralho.");
+        showToast("Essas palavras já existem neste baralho.");
         state.pendingWords = [];
         renderPendingList();
         return;
       }
 
-      const raw = await openaiChat(promptGenerateCards(wordsToCreate));
+      const raw = await openaiChat(promptGenerateCards(wordsToCreate, deck));
       const result = extractJson(raw);
       const newCards = result.Phrases || [];
 
       const patchBody = {};
       newCards.forEach(nc => {
         const key = wordKey(nc.Word);
-        const card = blankCard(nc.Word.toLowerCase(), nc.English, nc.Portuguese);
-        state.cards[key] = card;
+        const card = blankCard(nc.Word, nc.Phrase, nc.Translation);
+        deck.Cards[key] = card;
         patchBody[key] = card;
       });
 
-      await dbPatch(`/users/${state.uid}/Cards`, patchBody);
+      await dbPatch(`/users/${state.uid}/Decks/${deckId}/Cards`, patchBody);
       state.pendingWords = [];
       renderPendingList();
-      renderManageView();
+      renderCardGrid();
+      renderDecksView();
       showToast(`${newCards.length} card(s) adicionado(s).`);
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  // =========================================================
+  // TROCAR TEMA DO BARALHO
+  // =========================================================
+  function openThemeModal(){
+    const deck = state.decks[state.detailDeckId];
+    if(!deck) return;
+    $("theme-input-new").value = deck.Theme || "";
+    $("theme-modal").classList.remove("hidden");
+    $("theme-input-new").focus();
+  }
+  function closeThemeModal(){
+    $("theme-modal").classList.add("hidden");
+  }
+
+  async function applyThemeChange(){
+    const newTheme = $("theme-input-new").value.trim();
+    if(!newTheme){ showToast("Digite um tema."); return; }
+
+    const deckId = state.detailDeckId;
+    const deck = state.decks[deckId];
+    const keys = Object.keys(deck.Cards || {});
+    closeThemeModal();
+
+    if(keys.length === 0){
+      showLoading("Atualizando tema…");
+      try{
+        await updateDeckMeta(deckId, { Theme: newTheme });
+        renderDeckDetailHeader();
+        renderDecksView();
+        showToast("Tema atualizado.");
+      }catch(err){
+        showToast(err.message);
+      }finally{
+        hideLoading();
+      }
+      return;
+    }
+
+    showLoading(`Atualizando frases (0/${keys.length})…`);
+    try{
+      let done = 0;
+      const patchBody = {};
+      for(const key of keys){
+        const card = deck.Cards[key];
+        try{
+          const raw = await openaiChat(promptChangeTheme(card, deck, newTheme));
+          const refreshed = extractJson(raw);
+          card.Phrase = refreshed.Phrase;
+          card.Translation = refreshed.Translation;
+          patchBody[key] = { Phrase: card.Phrase, Translation: card.Translation };
+          delete state.audioCache[deckId + "::" + card.Word];
+        }catch(err){
+          console.warn("Falha ao atualizar card", card.Word, err);
+        }
+        done++;
+        showLoading(`Atualizando frases (${done}/${keys.length})…`);
+      }
+      if(Object.keys(patchBody).length > 0){
+        await dbPatch(`/users/${state.uid}/Decks/${deckId}/Cards`, patchBody);
+      }
+      await updateDeckMeta(deckId, { Theme: newTheme });
+      renderCardGrid();
+      renderDeckDetailHeader();
+      renderDecksView();
+      showToast("Tema do baralho atualizado.");
+    }catch(err){
+      showToast(err.message);
+    }finally{
+      hideLoading();
+    }
+  }
+
+  // =========================================================
+  // SCORING (mesma matemática do app original)
+  // =========================================================
+  function pickNextCard(cards){
+    const keys = Object.keys(cards);
+    const weights = keys.map(k => 1 / Math.max(1, cards[k].ScoreHits || 0));
+    const total = weights.reduce((a,b)=>a+b, 0);
+    const probs = weights.map(w => w/total);
+    const r = Math.random();
+    let cumulative = 0;
+    for(let i=0;i<probs.length;i++){
+      cumulative += probs[i];
+      if(r < cumulative) return keys[i];
+    }
+    return keys[keys.length-1];
+  }
+
+  function clampCard(card){
+    if(card.TotalHits < 0) card.TotalHits = 0;
+    if(card.ScoreHits < 0) card.ScoreHits = 0;
+    if(card.ScoreHits > card.TotalHits) card.ScoreHits = card.TotalHits;
+  }
+
+  async function answerCard(sum){
+    setAnswerButtonsEnabled(false);
+    const deckId = state.currentDeckId;
+    const key = state.currentCardKey;
+    const card = state.decks[deckId].Cards[key];
+
+    card.ScoreHits += sum;
+    card.TotalHits += sum > 1 ? sum : 1;
+
+    if(sum === 0) card.WarningHits += 1;
+    else if(sum < 0) card.WrongHits += 1;
+    else if(sum === 1) card.CorrectHits += 1;
+    else card.CorrectPlusHits += 1;
+
+    clampCard(card);
+
+    if(!card.History) card.History = [];
+    card.History.push({ Date: new Date().toISOString(), Sum: sum });
+    if(card.History.length > HISTORY_CAP){
+      card.History.splice(0, card.History.length - HISTORY_CAP);
+    }
+
+    try{
+      await dbPut(`/users/${state.uid}/Decks/${deckId}/Cards/${key}`, card);
+    }catch(err){
+      showToast(err.message);
+    }
+
+    setTimeout(() => loadNextCard(), 200);
+  }
+
+  function setAnswerButtonsEnabled(enabled){
+    ["btn-wrong","btn-warning","btn-correct","btn-correct-plus","btn-sound"].forEach(id=>{
+      $(id).disabled = !enabled;
+    });
+  }
+
+  // =========================================================
+  // ESTUDAR — render
+  // =========================================================
+  function populateStudyDeckSelect(){
+    const sel = $("study-deck-select");
+    const ids = Object.keys(state.decks);
+    sel.innerHTML = "";
+    if(ids.length === 0){
+      sel.innerHTML = '<option value="">Nenhum baralho</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    ids.forEach(id => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = state.decks[id].Name;
+      sel.appendChild(opt);
+    });
+    if(!state.currentDeckId || !state.decks[state.currentDeckId]){
+      state.currentDeckId = ids[0];
+    }
+    sel.value = state.currentDeckId;
+  }
+
+  function loadNextCard(){
+    const hasDecks = Object.keys(state.decks).length > 0;
+    $("study-hero").classList.toggle("hidden", !hasDecks);
+    $("study-empty-state").classList.toggle("hidden", hasDecks);
+    $("study-deck-select").classList.toggle("hidden", !hasDecks);
+
+    if(!hasDecks){
+      $("deck-status").textContent = "Nenhum baralho criado ainda.";
+      state.currentCardKey = null;
+      return;
+    }
+
+    $("flashcard-inner").classList.remove("flipped");
+    $("controls-answer").classList.add("hidden");
+    $("controls-turn").classList.remove("hidden");
+
+    const deck = state.decks[state.currentDeckId];
+    $("study-deck-lang-tag").textContent = languageLabel(deck.Language);
+    $("study-deck-theme-tag").textContent = deck.Theme || "sem tema";
+
+    const cards = deck.Cards || {};
+    const keys = Object.keys(cards);
+    $("deck-status").textContent = `Baralho: ${deck.Name} · ${keys.length} card(s)`;
+
+    if(keys.length === 0){
+      state.currentCardKey = null;
+      $("card-word").textContent = "Sem cards ainda";
+      $("controls-turn").classList.add("hidden");
+      return;
+    }
+
+    state.currentCardKey = pickNextCard(cards);
+    const card = cards[state.currentCardKey];
+    $("card-word").textContent = card.Word;
+    $("card-phrase").textContent = card.Phrase;
+    $("card-translation").textContent = card.Translation;
+    $("postmark-badge").textContent = card.ScoreHits;
+  }
+
+  function turnCard(){
+    if(!state.currentCardKey) return;
+    $("flashcard-inner").classList.add("flipped");
+    $("controls-turn").classList.add("hidden");
+    $("controls-answer").classList.remove("hidden");
+    setAnswerButtonsEnabled(true);
+  }
+
+  // =========================================================
+  // OPENAI — texto
+  // =========================================================
+  async function openaiChat(systemPrompt){
+    const key = await ensureOpenAiKey();
+    if(!key || key.indexOf("COLE-SUA-CHAVE") !== -1){
+      throw new Error("Não foi possível acessar a OpenAI. Tente novamente.");
+    }
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization": "Bearer " + key
+      },
+      body: JSON.stringify({
+        model:"gpt-4o-mini",
+        temperature:0.7,
+        messages:[{ role:"system", content: systemPrompt }]
+      })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error((data.error && data.error.message) || "Erro na chamada à OpenAI.");
+    }
+    return data.choices[0].message.content;
+  }
+
+  function extractJson(text){
+    const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    return JSON.parse(cleaned);
+  }
+
+  function promptGenerateCards(words, deck){
+    const lang = languageLabel(deck.Language);
+    const themePart = deck.Theme ? ` sobre o tema "${deck.Theme}"` : "";
+    return `Pegue a lista de Palavras, gere frases simples no idioma ${lang}${themePart} usando cada palavra, depois traduza cada frase para Português, ` +
+      "e devolva **apenas** no seguinte formato JSON, sem explicações adicionais, sem comentários, sem texto fora do JSON:\n\n" +
+      "{\n  \"Phrases\": [\n    { \"Word\": \"WORD1\", \"Phrase\": \"PHRASE1\", \"Translation\": \"TRANSLATION1\" }\n  ]\n}\n\n" +
+      "Palavras:\n" + words.join("\n");
+  }
+
+  function promptSuggestTenWords(existingWords, deck){
+    const lang = languageLabel(deck.Language);
+    const themePart = deck.Theme ? ` relacionadas ao tema "${deck.Theme}"` : "";
+    return `Analise a lista de palavras em ${lang} enviada, escolha as 10 palavras mais úteis${themePart} que não ` +
+      "estejam na lista e devolva **apenas** no seguinte formato JSON, sem explicações adicionais, sem comentários " +
+      "e sem texto fora do JSON:\n\n" +
+      "{\n  \"Words\": [\n    \"WORD1\",\n    \"WORD2\"\n  ]\n}\n\n" +
+      "Palavras:\n" + existingWords.join("\n");
+  }
+
+  function promptRefreshCard(card, deck){
+    const lang = languageLabel(deck.Language);
+    const themePart = deck.Theme ? ` sobre o tema "${deck.Theme}"` : "";
+    return `Pegue a Palavra, e gere uma frase SIMPLES no idioma ${lang} com a palavra "${card.Word}"${themePart}, mas diferente de "${card.Phrase}", ` +
+      "depois traduza para Português, e devolva **apenas** no seguinte formato JSON, sem explicações " +
+      "adicionais, sem comentários, sem texto fora do JSON:\n\n" +
+      "{ \"Word\": \"WORD\", \"Phrase\": \"PHRASE\", \"Translation\": \"TRANSLATION\" }";
+  }
+
+  function promptChangeTheme(card, deck, newTheme){
+    const lang = languageLabel(deck.Language);
+    return `Pegue a Palavra "${card.Word}", e gere uma frase SIMPLES no idioma ${lang} usando essa palavra, sobre o tema "${newTheme}", ` +
+      "depois traduza para Português, e devolva **apenas** no seguinte formato JSON, sem explicações " +
+      "adicionais, sem comentários, sem texto fora do JSON:\n\n" +
+      "{ \"Word\": \"WORD\", \"Phrase\": \"PHRASE\", \"Translation\": \"TRANSLATION\" }";
+  }
+
+  // =========================================================
+  // OPENAI — áudio
+  // =========================================================
+  async function playCardAudio(deckId, card){
+    const cacheKey = deckId + "::" + card.Word;
+    if(state.audioCache[cacheKey]){
+      new Audio(state.audioCache[cacheKey]).play();
+      return;
+    }
+    showLoading("Gerando áudio…");
+    try{
+      const key = await ensureOpenAiKey();
+      if(!key || key.indexOf("COLE-SUA-CHAVE") !== -1){
+        throw new Error("Não foi possível acessar a OpenAI. Tente novamente.");
+      }
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "Authorization":"Bearer " + key
+        },
+        body: JSON.stringify({
+          model:"gpt-4o-mini-tts",
+          voice:"alloy",
+          input: card.Phrase,
+          response_format:"mp3"
+        })
+      });
+      if(!res.ok){
+        const errText = await res.text();
+        throw new Error("Erro ao gerar áudio: " + errText.slice(0,150));
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      state.audioCache[cacheKey] = url;
+      new Audio(url).play();
     }catch(err){
       showToast(err.message);
     }finally{
@@ -562,8 +926,31 @@
   // =========================================================
   // ESTATÍSTICAS
   // =========================================================
+  function populateStatsDeckSelect(){
+    const sel = $("stats-deck-select");
+    const ids = Object.keys(state.decks);
+    const current = sel.value || state.statsDeckId || "all";
+    sel.innerHTML = '<option value="all">Todos os baralhos</option>';
+    ids.forEach(id => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = state.decks[id].Name;
+      sel.appendChild(opt);
+    });
+    sel.value = (current !== "all" && ids.includes(current)) ? current : "all";
+    state.statsDeckId = sel.value;
+  }
+
+  function getStatsCards(){
+    if(state.statsDeckId && state.statsDeckId !== "all"){
+      const deck = state.decks[state.statsDeckId];
+      return deck ? Object.values(deck.Cards || {}) : [];
+    }
+    return Object.values(state.decks).flatMap(d => Object.values(d.Cards || {}));
+  }
+
   function renderStatsView(){
-    const cards = Object.values(state.cards);
+    const cards = getStatsCards();
     const totalCards = cards.length;
     const totalReviews = cards.reduce((s,c) => s + (c.TotalHits || 0), 0);
     const totalCorrect = cards.reduce((s,c) => s + (c.CorrectHits || 0) + (c.CorrectPlusHits || 0), 0);
@@ -617,11 +1004,9 @@
     });
 
     // saúde por card, pior primeiro
-    const keys = Object.keys(state.cards);
-    const sorted = keys.slice().sort((a,b) => {
-      const ca = state.cards[a], cb = state.cards[b];
-      const pa = ca.TotalHits > 0 ? ca.ScoreHits/ca.TotalHits : -1;
-      const pb = cb.TotalHits > 0 ? cb.ScoreHits/cb.TotalHits : -1;
+    const sorted = cards.slice().sort((a,b) => {
+      const pa = a.TotalHits > 0 ? a.ScoreHits/a.TotalHits : -1;
+      const pb = b.TotalHits > 0 ? b.ScoreHits/b.TotalHits : -1;
       return pa - pb;
     });
     const healthList = $("health-list");
@@ -629,8 +1014,7 @@
     if(sorted.length === 0){
       healthList.innerHTML = '<p class="empty-msg">Sem cards para mostrar ainda.</p>';
     }
-    sorted.forEach(key => {
-      const c = state.cards[key];
+    sorted.forEach(c => {
       const row = document.createElement("div");
       row.className = "health-row";
       let dotClass = "health-neutral", label = "sem dados";
@@ -657,12 +1041,24 @@
   }
 
   function switchView(viewId){
+    const navTargetId = viewId === "view-deck-detail" ? "view-decks" : viewId;
     document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === viewId));
-    document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === viewId));
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === navTargetId));
     closeMobileSidebar();
-    if(viewId === "view-manage") renderManageView();
-    if(viewId === "view-stats") renderStatsView();
-    if(viewId === "view-settings") $("input-openai-key").value = "";
+    if(viewId === "view-decks") renderDecksView();
+    if(viewId === "view-deck-detail"){
+      renderDeckDetailHeader();
+      renderPendingList();
+      renderCardGrid();
+    }
+    if(viewId === "view-study"){
+      populateStudyDeckSelect();
+      loadNextCard();
+    }
+    if(viewId === "view-stats"){
+      populateStatsDeckSelect();
+      renderStatsView();
+    }
   }
 
   function openMobileSidebar(){
@@ -675,14 +1071,15 @@
   }
 
   async function enterApp(){
-    showLoading("Carregando seu baralho…");
+    showLoading("Carregando seus baralhos…");
     try{
       await ensureProfile();
-      await loadUserCards();
+      await Promise.all([loadUserDecks(), ensureOpenAiKey()]);
       showApp();
+      const lastDeck = localStorage.getItem("fluencia:lastDeck");
+      if(lastDeck && state.decks[lastDeck]) state.currentDeckId = lastDeck;
       switchView("view-study");
-      loadNextCard();
-      $("nav-card-count").textContent = Object.keys(state.cards).length;
+      $("nav-deck-count").textContent = Object.keys(state.decks).length;
     }catch(err){
       showToast(err.message);
     }finally{
@@ -694,13 +1091,21 @@
     state.idToken = null;
     state.uid = null;
     state.email = null;
-    state.cards = {};
+    state.decks = {};
+    state.currentDeckId = null;
+    state.detailDeckId = null;
+    state.statsDeckId = "all";
     state.currentCardKey = null;
     state.audioCache = {};
     $("app-shell").classList.add("hidden");
     $("screen-login").classList.remove("hidden");
     closeMobileSidebar();
   }
+
+  // =========================================================
+  // INIT
+  // =========================================================
+  populateLanguageSelect($("deck-input-language"));
 
   // =========================================================
   // EVENTOS
@@ -768,7 +1173,36 @@
   $("btn-warning").addEventListener("click", () => answerCard(0));
   $("btn-correct").addEventListener("click", () => answerCard(1));
   $("btn-correct-plus").addEventListener("click", () => answerCard(3));
-  $("btn-sound").addEventListener("click", () => { if(state.currentCardKey) playCardAudio(state.cards[state.currentCardKey]); });
+  $("btn-sound").addEventListener("click", () => {
+    if(state.currentCardKey) playCardAudio(state.currentDeckId, state.decks[state.currentDeckId].Cards[state.currentCardKey]);
+  });
+
+  $("study-deck-select").addEventListener("change", (e) => {
+    state.currentDeckId = e.target.value;
+    localStorage.setItem("fluencia:lastDeck", state.currentDeckId);
+    loadNextCard();
+  });
+
+  $("btn-goto-decks").addEventListener("click", () => {
+    switchView("view-decks");
+    openDeckModal("create");
+  });
+
+  $("btn-new-deck").addEventListener("click", () => openDeckModal("create"));
+  $("deck-modal-cancel").addEventListener("click", closeDeckModal);
+  $("deck-modal-save").addEventListener("click", saveDeckModal);
+
+  $("detail-back").addEventListener("click", () => switchView("view-decks"));
+  $("btn-edit-deck").addEventListener("click", () => openDeckModal("edit", state.detailDeckId));
+  $("btn-delete-deck").addEventListener("click", () => confirmDeleteDeck(state.detailDeckId));
+  $("btn-change-theme").addEventListener("click", openThemeModal);
+  $("theme-modal-cancel").addEventListener("click", closeThemeModal);
+  $("theme-modal-save").addEventListener("click", applyThemeChange);
+
+  $("stats-deck-select").addEventListener("change", (e) => {
+    state.statsDeckId = e.target.value;
+    renderStatsView();
+  });
 
   $("btn-add-word").addEventListener("click", () => {
     addPendingWord($("input-new-word").value);
@@ -783,12 +1217,6 @@
   });
   $("btn-suggest-ten").addEventListener("click", suggestTenWords);
   $("btn-generate-cards").addEventListener("click", generatePendingCards);
-
-  $("btn-save-settings").addEventListener("click", () => {
-    const val = $("input-openai-key").value.trim();
-    if(val) openaiApiKey = val;
-    showToast("Configurações salvas para esta sessão.");
-  });
 
   ["login-email","login-password"].forEach(id=>{
     $(id).addEventListener("keydown", (e) => { if(e.key === "Enter") $("btn-login").click(); });

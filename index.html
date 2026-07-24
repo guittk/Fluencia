@@ -63,7 +63,7 @@
     <nav class="nav-level">
       <div class="nav-level-label">Módulo</div>
       <div class="nav-item active" data-view="view-study"><span class="dot"></span>Estudar</div>
-      <div class="nav-item" data-view="view-manage"><span class="dot"></span>Cards<span class="badge" id="nav-card-count">0</span></div>
+      <div class="nav-item" data-view="view-decks"><span class="dot"></span>Baralhos<span class="badge" id="nav-deck-count">0</span></div>
       <div class="nav-item" data-view="view-stats"><span class="dot"></span>Estatísticas</div>
       <div class="nav-item" data-view="view-settings"><span class="dot"></span>Configurações</div>
     </nav>
@@ -81,12 +81,19 @@
         <div>
           <p class="eyebrow">Sessão de estudo</p>
           <h2 class="view-title">Estudar</h2>
-          <p class="view-desc" id="deck-status">Carregando baralho…</p>
+          <p class="view-desc" id="deck-status">Carregando baralhos…</p>
         </div>
+        <select class="config-input" id="study-deck-select" style="min-width:220px;"></select>
       </div>
 
-      <div class="hero-card">
+      <div class="hero-card" id="study-hero">
         <div class="hero-glow"></div>
+
+        <div style="display:flex; gap:8px; margin-bottom:16px; position:relative; z-index:1; flex-wrap:wrap;">
+          <span class="tag tag-sage" id="study-deck-lang-tag">—</span>
+          <span class="tag tag-gold" id="study-deck-theme-tag">—</span>
+        </div>
+
         <div class="flashcard-wrap">
           <div class="flashcard-inner" id="flashcard-inner">
             <div class="face front">
@@ -96,8 +103,8 @@
             <div class="face back">
               <div class="postmark-badge" id="postmark-badge">0</div>
               <p class="eyebrow">Frase</p>
-              <div class="english-text" id="card-english">—</div>
-              <div class="portuguese-text" id="card-portuguese">—</div>
+              <div class="english-text" id="card-phrase">—</div>
+              <div class="portuguese-text" id="card-translation">—</div>
             </div>
           </div>
         </div>
@@ -114,22 +121,50 @@
           <button class="btn btn-ghost" id="btn-sound">🔊 Ouvir</button>
         </div>
       </div>
+
+      <div class="panel hidden" id="study-empty-state" style="text-align:center; padding:40px 24px;">
+        <p class="view-desc" style="margin:0 0 16px;">Você ainda não tem nenhum baralho. Crie um baralho para começar a estudar.</p>
+        <button class="btn btn-primary btn-sm" id="btn-goto-decks">+ Criar meu primeiro baralho</button>
+      </div>
     </section>
 
-    <!-- CARDS -->
-    <section class="view" id="view-manage">
+    <!-- BARALHOS -->
+    <section class="view" id="view-decks">
       <div class="view-head">
         <div>
-          <p class="eyebrow">Gerenciar baralho</p>
-          <h2 class="view-title">Cards</h2>
-          <p class="view-desc">Adicione palavras e gere frases automaticamente com IA.</p>
+          <p class="eyebrow">Organização</p>
+          <h2 class="view-title">Baralhos</h2>
+          <p class="view-desc">Crie baralhos por idioma e tema. As frases geradas por IA seguem o contexto escolhido — viagem, trabalho no exterior, negócios, o que precisar.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-new-deck">+ Novo baralho</button>
+      </div>
+
+      <div class="study-grid deck-grid" id="deck-grid"></div>
+      <p class="empty-msg hidden" id="deck-empty-msg">Nenhum baralho ainda. Crie o primeiro para começar a estudar.</p>
+    </section>
+
+    <!-- DETALHE DO BARALHO -->
+    <section class="view" id="view-deck-detail">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow"><span class="notice-link" id="detail-back">← Baralhos</span></p>
+          <h2 class="view-title" id="detail-deck-name">—</h2>
+          <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+            <span class="tag tag-sage" id="detail-deck-lang">—</span>
+            <span class="tag tag-gold" id="detail-deck-theme">—</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" id="btn-change-theme">🔀 Trocar tema</button>
+          <button class="btn btn-edit btn-sm" id="btn-edit-deck">✏️ Editar baralho</button>
+          <button class="btn btn-reject btn-sm" id="btn-delete-deck">🗑️ Excluir baralho</button>
         </div>
       </div>
 
       <div class="panel" style="margin-bottom:20px;">
         <p class="panel-title">Adicionar novas palavras <span class="tag tag-sage" id="pending-count-tag">0 pendentes</span></p>
         <div class="capture-bar">
-          <input id="input-new-word" placeholder="Digite uma palavra em inglês e pressione Enter">
+          <input id="input-new-word" placeholder="Digite uma palavra e pressione Enter">
           <button class="btn btn-primary btn-sm" id="btn-add-word">Adicionar</button>
         </div>
         <div class="inbox-list" id="pending-list"></div>
@@ -140,7 +175,7 @@
       </div>
 
       <div class="panel">
-        <p class="panel-title">Seu baralho <span class="tag tag-gold" id="deck-count-tag">0 cards</span></p>
+        <p class="panel-title">Cards do baralho <span class="tag tag-gold" id="deck-count-tag">0 cards</span></p>
         <div class="study-grid" id="card-grid"></div>
         <p class="empty-msg hidden" id="empty-msg">Nenhum card ainda. Adicione palavras acima para começar.</p>
       </div>
@@ -154,6 +189,7 @@
           <h2 class="view-title">Estatísticas</h2>
           <p class="view-desc">Seu desempenho geral e o de cada card individualmente.</p>
         </div>
+        <select class="config-input" id="stats-deck-select" style="min-width:220px;"></select>
       </div>
 
       <div class="stat-grid">
@@ -195,21 +231,6 @@
         </div>
       </div>
 
-      <!-- <div class="config-section">
-        <p class="config-section-title">Chave da API OpenAI</p>
-        <p class="config-section-desc">Usada para gerar frases dos cards e o áudio de pronúncia. Já vem definida no código-fonte deste app; o campo abaixo só sobrescreve para esta aba/sessão.</p>
-        <div class="config-row">
-          <div>
-            <div class="config-row-label">Chave</div>
-            <div class="config-row-desc">Formato sk-...</div>
-          </div>
-          <input class="config-input" type="password" id="input-openai-key" placeholder="sk-...">
-        </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:14px;">
-          <button class="btn btn-primary btn-sm" id="btn-save-settings">Salvar</button>
-        </div>
-      </div> -->
-
       <div class="config-section">
         <p class="config-section-title">Conta</p>
         <div class="config-row">
@@ -220,18 +241,61 @@
           <button class="btn btn-ghost btn-sm" id="btn-logout-2">Sair da conta</button>
         </div>
       </div>
-
-      <!-- <div class="config-section">
-        <p class="config-section-title">Sobre seus dados</p>
-        <p class="config-section-desc">
-          Cada conta tem seu próprio baralho, salvo isoladamente no Firebase em
-          <code>/users/&lt;seu-id&gt;/Cards</code>. Isso permite qualquer número de contas
-          (você, família, alunos) sem misturar o progresso de ninguém.
-        </p>
-      </div> -->
     </section>
 
   </main>
+</div>
+
+<!-- MODAL: criar/editar baralho -->
+<div class="modal-backdrop hidden" id="deck-modal">
+  <div class="modal-card">
+    <p class="modal-title" id="deck-modal-title">Novo baralho</p>
+    <p class="modal-desc">Defina o nome, o idioma de estudo e o tema que vai guiar as frases geradas pela IA.</p>
+    <div class="field">
+      <label for="deck-input-name">Nome do baralho</label>
+      <input id="deck-input-name" placeholder="Ex: Inglês para viagens">
+    </div>
+    <div class="field">
+      <label for="deck-input-language">Idioma de estudo</label>
+      <select id="deck-input-language" class="config-input" style="width:100%;"></select>
+    </div>
+    <div class="field">
+      <label for="deck-input-theme">Tema das frases</label>
+      <input id="deck-input-theme" placeholder="Ex: viagens, trabalho no exterior, negócios...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="deck-modal-cancel">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="deck-modal-save">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: trocar tema -->
+<div class="modal-backdrop hidden" id="theme-modal">
+  <div class="modal-card">
+    <p class="modal-title">Trocar tema do baralho</p>
+    <p class="modal-desc">As frases de todos os cards existentes serão regeneradas pela IA com o novo tema. As palavras e o histórico de estudo são mantidos.</p>
+    <div class="field">
+      <label for="theme-input-new">Novo tema</label>
+      <input id="theme-input-new" placeholder="Ex: culinária, tecnologia, negócios...">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="theme-modal-cancel">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="theme-modal-save">Trocar tema</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: confirmação genérica -->
+<div class="modal-backdrop hidden" id="confirm-modal">
+  <div class="modal-card">
+    <p class="modal-title" id="confirm-modal-title">Confirmar ação</p>
+    <p class="modal-desc" id="confirm-modal-desc"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="confirm-modal-cancel">Cancelar</button>
+      <button class="btn btn-wrong btn-sm" id="confirm-modal-confirm">Confirmar</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>
