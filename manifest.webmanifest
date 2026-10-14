@@ -1,0 +1,17 @@
+{
+  "name": "Fluência",
+  "short_name": "Fluência",
+  "description": "Repetição espaçada com IA para estudar idiomas.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14171c",
+  "theme_color": "#0f1216",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "assets/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icone.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

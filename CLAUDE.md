@@ -4,39 +4,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Fluência is a single-page flashcard app (spaced repetition) for language learning, organized into **decks** — each deck has its own study language and a theme that steers AI-generated phrases (e.g. "Inglês" + "trabalho no exterior"). It's a static site with no build step, deployed via GitHub Pages (`CNAME` → `fluencia.guilherme-oliveira.com`; pushing to the default branch is the deployment mechanism).
+Fluência is a flashcard app for language learning, organized into **decks**. Each deck has a language, a CEFR level and an **objective** (e.g. "conseguir vaga de desenvolvedor Unity/VR no exterior"); Claude builds a **trail** of units from the objective and generates the cards of each unit. Users: Guilherme and Julia. Static site, no build step, deployed with **Firebase Hosting** (`firebase deploy --only hosting` → https://fluencia.web.app). GitHub Pages is off.
+
+Design decisions from the owner (keep them):
+- **Study is infinite.** No due dates, no end of session. The next card comes from a weighted draw (`js/selecao.js`).
+- **Speaking is always optional.** Every mic feature has a button-only path.
+- A card is a **target** (word, expression or ready phrase) plus a **phrase** that uses it; each new card must bring a new target.
 
 ## Running / developing
 
-There is no package manager, build tool, linter, or test suite — it's plain HTML/CSS/JS.
+Plain HTML/CSS/ES modules. Serve the folder with any static server (`python -m http.server 5195`) — modules don't load from `file://`. No tests, no linter.
 
-- Open `index.html` directly in a browser, or serve the directory with any static file server, to test changes.
-- Verify changes manually in a browser: check the console for errors and exercise the login → decks → study → stats flows. `fetch` calls to Firebase/OpenAI need real network access, so `file://` mostly works but some flows are easier to test over `http://`.
+To test logged-in screens without a real account, use an import map that swaps `js/firebase.js` and `js/ia.js` for in-memory fakes (absolute URLs of the served files → fake modules, in an ignored `_teste/` folder). Don't commit the fakes.
 
 ## Architecture
 
-The entire app is 3 files:
+- `index.html` — markup; views are `<section class="view">` toggled by `switchView()`.
+- `css/styles.css` — all styling; tokens on `:root`.
+- `js/app.js` — UI and state (`state` object), all screens.
+- `js/firebase.js` — Firebase via REST, no SDK: login, **token refresh** (Secure Token API) with the session kept in `localStorage`, Realtime Database helpers. `meu(path)` = `/fluencia/users/{uid}` + path.
+- `js/ia-pedidos.js` — every Claude request (system, messages, JSON schema, effort). Pure, no DOM: can be imported from Node to test prompts against the real API. `executar()` calls `client.beta.messages.create` with structured outputs and the server-side fallback.
+- `js/ia.js` — browser Claude client (`@anthropic-ai/sdk` from jsDelivr, pinned version, `dangerouslyAllowBrowser`). Key read from `/fluencia/claudeKey`.
+- `js/selecao.js` — card choice and mastery. Per card and mode: `m` (moving average of grades), `n`, `last`, `ok`. Weight = `0.2 + 2.5·(1−m) + 3·forgetting`, with a cooldown on recent cards and a brake on new cards.
+- `js/voz.js` — browser speech: TTS (`speechSynthesis`), recognition (`SpeechRecognition`), own-voice recording (`MediaRecorder`), local word-level comparison.
+- `sw.js` + `manifest.webmanifest` — installable PWA, network-first cache of the app shell. Bump `CACHE` when adding files.
 
-- `index.html` — structure/markup only.
-- `css/styles.css` — all styling; theme tokens (colors, radii, fonts) are CSS custom properties on `:root`.
-- `js/app.js` — all logic, wrapped in a single IIFE (`"use strict"`), no modules/bundler/framework.
+### Database (shared project `basehub-135f5` — other apps live here too)
 
-**State & rendering**: all app state lives in an in-memory `state` object inside the IIFE closure (decks, current deck, pending words, audio cache, etc.). The DOM is manipulated directly via a `$(id)` helper (`document.getElementById`) and manual `innerHTML` templating — always run user-provided text through `escapeHtml()` before interpolating into a template string.
+Everything of Fluência is under `/fluencia`. **Never touch other top-level nodes.**
 
-**Views**: each `<section class="view">` in `index.html` is toggled via `switchView(viewId)`, which adds `.active` and updates sidebar nav highlighting. Views: `view-study`, `view-decks`, `view-deck-detail` (reached by opening a deck, not a direct nav item), `view-stats`, `view-settings`.
+- `/fluencia/claudeKey` — Claude API key (read: allowed emails only; write: console/CLI only).
+- `/fluencia/users/{uid}/` — `Profile` (Nome, Historico, Prefs, UltimoNivel), `Decks/{id}` (Name, Language, Nivel, Objetivo, Contexto, Trilha[], UnidadeAtual, Cards), `Dias/{AAAA-MM-DD}` ({r, a, f, rm, ra}), `Conversas/{id}`, `Niveis/{id}`.
+- `/fluencia/juntos/{uid}` — summary for the "Juntos" screen (name, streak, today, last 7 days, level, weakest targets, today's car script).
 
-**Backend — Firebase, called via raw REST (no SDK)**:
-- Auth: Identity Toolkit REST endpoints for login/signup/password reset — `authRequest()`.
-- Data: Realtime Database REST (`dbGet`/`dbPut`/`dbPatch`/`dbDelete`), authenticated via an `?auth={idToken}` query param appended in `buildUrl()`.
-- Data model: `/users/{uid}/Profile` and `/users/{uid}/Decks/{deckId}` → `{ Name, Language, Theme, CreatedAt, UpdatedAt, Cards: { wordKey: card } }`. A card is `{ Word, Phrase, Translation, ScoreHits, TotalHits, CorrectHits, CorrectPlusHits, WarningHits, WrongHits, History[] }`.
-- The OpenAI API key is **not** hardcoded — it's fetched once from `/openAiKey` in the Realtime Database on app entry (`ensureOpenAiKey()`, called in parallel with deck loading in `enterApp()`) and cached in the closure variable `openaiApiKey`. Always `await ensureOpenAiKey()` before an OpenAI call rather than reading `openaiApiKey` directly — the old fire-and-forget version had a bug where the very first AI action of a session would fail.
+Rules: only the three emails listed in the rules can read or write `/fluencia`. The rules of the whole database are deployed from outside this repo (they include other apps' rules). To change the Fluência block, fetch the live rules first (`MSYS_NO_PATHCONV=1 firebase database:get "/.settings/rules"` in Git Bash), edit only `fluencia`, and deploy them with `firebase deploy --only database` from a scratch folder.
 
-**OpenAI**: called directly from the client — `openaiChat()` (chat completions, for phrase generation/suggestions/theme changes) and `playCardAudio()` (TTS for pronunciation). Every prompt builder (`promptGenerateCards`, `promptSuggestTenWords`, `promptRefreshCard`, `promptChangeTheme`) takes the current `deck` and includes its `Language`/`Theme` so generated content matches the deck's context.
+## UI conventions to preserve
 
-**Scoring**: `pickNextCard()` picks the next card with probability inversely weighted by `ScoreHits` (less-known cards shown more often). `answerCard()` updates `ScoreHits`/`TotalHits`/`History` based on which answer button was pressed (Errei / Quase / Acertei / Fácil).
-
-**UI conventions to preserve when editing**:
-- Confirmations and blocking dialogs use in-app modals (`#deck-modal`, `#theme-modal`, `#confirm-modal` + the `showConfirm()` promise-based helper) — never native `confirm()`/`alert()`.
-- `#loading-overlay` has a higher `z-index` than modals on purpose, so `showLoading()`/`hideLoading()` blocks all interaction — including clicks inside an already-open modal — during any async action. Wrap async actions in `showLoading()`/`hideLoading()` rather than only disabling individual buttons.
-- The app shell is a fixed-height layout (`body { height:100vh; overflow:hidden }`); only `.main` scrolls internally, so the sidebar never scrolls with page content. Don't reintroduce document-level scrolling.
-- `localStorage` (`fluencia:lastDeck`) remembers the last-studied deck across sessions.
+- Confirmations use in-app modals (`confirmar()`), never `confirm()`/`alert()`.
+- Async actions go through `acao(text, fn)` (loading overlay + toast on error).
+- Escape every user or AI text with `esc()` before putting it in `innerHTML`.
+- Fixed-height shell; only `.main` scrolls.
