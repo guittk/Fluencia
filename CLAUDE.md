@@ -37,7 +37,7 @@ Everything of Fluência is under `/fluencia`. **Never touch other top-level node
 - `/fluencia/users/{uid}/` — `Profile` (Nome, Historico, Prefs, UltimoNivel), `Decks/{id}` (Name, Language, Nivel, Objetivo, Contexto, Trilha[], UnidadeAtual, Cards), `Dias/{AAAA-MM-DD}` ({r, a, f, rm, ra}), `Conversas/{id}`, `Niveis/{id}`.
 - `/fluencia/juntos/{uid}` — summary for the "Juntos" screen (name, streak, today, last 7 days, level, weakest targets, today's car script).
 
-Rules: only the three emails listed in the rules can read or write `/fluencia`. The rules of the whole database are deployed from outside this repo (they include other apps' rules). To change the Fluência block, fetch the live rules first (`MSYS_NO_PATHCONV=1 firebase database:get "/.settings/rules"` in Git Bash), edit only `fluencia`, and deploy them with `firebase deploy --only database` from a scratch folder.
+Rules: only the two emails listed in the rules (Guilherme and Julia) can read or write `/fluencia`. The rules of the whole database are deployed from outside this repo (they include other apps' rules). To change the Fluência block, fetch the live rules first (`MSYS_NO_PATHCONV=1 firebase database:get "/.settings/rules"` in Git Bash), edit only `fluencia`, and deploy them with `firebase deploy --only database` from a scratch folder.
 
 ## UI conventions to preserve
 
