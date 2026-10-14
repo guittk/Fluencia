@@ -22,7 +22,7 @@ export function idiomaLabel(code){
   return l ? l.label : (code || "—");
 }
 
-export const MODELO = "claude-opus-5-5";
+export const MODELO = "claude-sonnet-5-5";
 
 // Executa um pedido com o cliente do SDK (@anthropic-ai/sdk) e devolve o JSON.
 // O fallback do lado do servidor reroteia se o modelo recusar por segurança.
