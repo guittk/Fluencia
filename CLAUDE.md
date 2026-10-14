@@ -19,8 +19,8 @@ To test logged-in screens without a real account, use an import map that swaps `
 
 ## Architecture
 
-- `index.html` — markup; views are `<section class="view">` toggled by `switchView()`.
-- `css/styles.css` — all styling; tokens on `:root`.
+- `index.html` — markup; views are `<section class="view">` toggled by `irPara()`. Four tabs (Estudar, Conversar, Baralhos, Juntos); `v-deck` and `v-you` (Você: stats, level, settings) are sub-screens opened as layers.
+- `css/styles.css` — all styling; tokens on `:root`. Visual direction "Embarque" (approved 14/10/2026): dark airport board, yellow `#FFC400`, Barlow Condensed for signage, Barlow for text, JetBrains Mono for the flap letters. Mobile first; from 900px the tab bar becomes a left rail.
 - `js/app.js` — UI and state (`state` object), all screens.
 - `js/firebase.js` — Firebase via REST, no SDK: login, **token refresh** (Secure Token API) with the session kept in `localStorage`, Realtime Database helpers. `meu(path)` = `/fluencia/users/{uid}` + path.
 - `js/ia-pedidos.js` — every Claude request (system, messages, JSON schema, effort). Pure, no DOM: can be imported from Node to test prompts against the real API. `executar()` calls `client.beta.messages.create` with structured outputs and the server-side fallback.
@@ -41,7 +41,13 @@ Rules: only the two emails listed in the rules (Guilherme and Julia) can read or
 
 ## UI conventions to preserve
 
-- Confirmations use in-app modals (`confirmar()`), never `confirm()`/`alert()`.
-- Async actions go through `acao(text, fn)` (loading overlay + toast on error).
+- **Layers close with the back button.** Sheets, the chat room, sub-screens and car mode go through `abrirCamada()` (pushes history) and close with `fecharCamada()`; never hide them directly.
+- Bottom sheets (`abrirFolha()`) replace modals; `confirmar()` is a sheet.
+- The study card: tap flips, horizontal drag (after the back was seen) answers — right Acertei, left Errei. The four grade buttons stay fixed above the tab bar.
+- Phrases render as split-flap tiles (`painel()`); animations respect `prefers-reduced-motion`.
+- AI waits use the top pill (`acao()`/`ocupado()`) or skeletons, never a full-screen overlay.
+
+- Never `confirm()`/`alert()`.
+- Async actions go through `acao(text, fn, button)` (busy pill, disables the button, toast on error).
 - Escape every user or AI text with `esc()` before putting it in `innerHTML`.
 - Fixed-height shell; only `.main` scrolls.
