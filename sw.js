@@ -1,6 +1,6 @@
 // Service worker: guarda a casca do app para abrir rápido e instalar no celular.
 // Rede primeiro, cache como reserva — assim uma versão nova nunca fica presa.
-const CACHE = "fluencia-v5";
+const CACHE = "fluencia-v6";
 const CASCA = ["./", "index.html", "css/styles.css", "js/app.js", "js/firebase.js", "js/ia.js",
   "js/ia-pedidos.js", "js/selecao.js", "js/voz.js", "js/catalogo.js", "js/erros.js", "manifest.webmanifest", "assets/icone.svg", "assets/icone-192.png"];
 

@@ -22,7 +22,7 @@ export const LIMIAR = 0.7;         // domínio e % de nível que contam como "se
 export const MIN_FRASES_USO = 10;  // abaixo disso, o uso fica "sem medida"
 export const CARDS_POR_EXERCICIO = 3;
 
-export const NOME_ESTADO = { treinando: "Treinando", quase: "Quase lá", dominado: "Dominado", presumido: "Presumido", "nao-medido": "Não medido" };
+export const NOME_ESTADO = { treinando: "Treinando", quase: "Quase lá", dominado: "Dominado", presumido: "Sabido", "nao-medido": "Não medido" };
 
 const vazio = () => ({ m: 0, n: 0, ok: 0, last: 0, dias: {}, erros: 0, ult: 0 });
 
@@ -152,6 +152,35 @@ export function regua({ regs = {}, base = null, aprendidos = 0, producao = [] })
   for(const nv of niveis){ if(nv.pct >= LIMIAR) atual = nv.n; else break; }
   const prox = niveis[atual ? NIVEIS_REGUA.indexOf(atual) + 1 : 0] || null;
   return { niveis, atual, prox: prox ? prox.n : null, pctProx: prox ? prox.pct : 1, frases: frases.length };
+}
+
+// O que falta pra um nível contar como seu, em coisas que dá pra fazer.
+// Caminho de referência: cada parte em 70% fecha o nível (uma parte acima
+// compensa outra abaixo, mas este é o caminho que dá pra contar).
+//   gram: quantos pontos dominar, dos que mais sobem a régua primeiro
+//   vocab: quantas palavras (cards aprendidos) faltam até 70% da meta
+//   uso: quantas frases faltam pro mínimo, e se a parte limpa está abaixo de 70%
+export function faltaNivel(nv, { regs = {}, base = null, aprendidos = 0, frases = 0 }){
+  const lista = pontosDoNivel(nv.n);
+  const valores = lista.map(p => ({ id: p.id, v: valorPonto(regs[p.id], p.id, base), e: estadoPonto(regs[p.id], p.id, base) }));
+  let soma = valores.reduce((a, x) => a + x.v, 0);
+  const alvoSoma = LIMIAR * lista.length;
+  const aDominar = [];
+  for(const x of valores.filter(x => x.e !== "dominado").sort((a, b) => a.v - b.v)){
+    if(soma >= alvoSoma - 1e-9) break;
+    soma += 1 - x.v;
+    aDominar.push(x.id);
+  }
+  const vocabBase = base ? META_VOCAB[base] : 0;
+  const palavras = Math.min(nv.metaVocab, vocabBase + aprendidos);
+  const faltaPalavras = Math.max(0, Math.ceil(LIMIAR * nv.metaVocab - (vocabBase + aprendidos)));
+  const faltaFrases = Math.max(0, MIN_FRASES_USO - frases);
+  return {
+    pct: nv.pct, faltaPct: Math.max(0, LIMIAR - nv.pct),
+    gram: { pct: nv.gram, pontos: aDominar.length, ids: aDominar, dominados: nv.dominados, total: nv.total, ok: nv.gram >= LIMIAR },
+    vocab: { pct: nv.vocab, palavras, meta: nv.metaVocab, falta: faltaPalavras, ok: nv.vocab >= LIMIAR },
+    uso: { pct: nv.uso, frases, faltaFrases, ok: nv.uso !== null && nv.uso >= LIMIAR },
+  };
 }
 
 // Pontos com erro, do que mais pesa ao que menos pesa.

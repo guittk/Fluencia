@@ -4,40 +4,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Fluência</title>
-<meta name="theme-color" content="#0E1116">
+<meta name="theme-color" content="#0F1115">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="assets/icone.svg">
 <link rel="apple-touch-icon" href="assets/icone-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
-<!-- LOGIN -->
+<!-- ENTRAR -->
 <div id="login" class="login hidden">
-  <form class="login-pass" id="login-form" autocomplete="on" novalidate>
-    <div class="pass-head"><span>Cartão de embarque</span><span>FLU · 001</span></div>
-    <div class="pass-body">
-      <div class="brand-big">Fluência</div>
-      <p class="brand-sub">Repetição espaçada com IA</p>
-      <div id="login-error" class="login-error" role="alert"></div>
-      <label class="field"><span>Email</span>
-        <input type="email" id="login-email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" required>
-      </label>
-      <label class="field"><span>Senha</span>
-        <span class="pw"><input type="password" id="login-password" autocomplete="current-password" required>
-        <button type="button" class="pw-eye" id="pw-eye" aria-label="Mostrar senha">mostrar</button></span>
-      </label>
-      <button class="btn btn-yel btn-block" id="btn-login" type="submit">Embarcar</button>
-      <div class="login-alt">
-        <button type="button" class="link" id="btn-signup">Criar conta</button>
-        <button type="button" class="link" id="link-forgot">Esqueci a senha</button>
-      </div>
+  <form class="login-card" id="login-form" autocomplete="on" novalidate>
+    <div class="brand-big"><i>F</i>Fluência</div>
+    <p class="brand-sub">Inglês com repetição, seus erros e a régua até o B2</p>
+    <div id="login-error" class="login-error" role="alert"></div>
+    <label class="field"><span>Email</span>
+      <input type="email" id="login-email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+    </label>
+    <label class="field"><span>Senha</span>
+      <span class="pw"><input type="password" id="login-password" autocomplete="current-password" required>
+      <button type="button" class="pw-eye" id="pw-eye" aria-label="Mostrar senha">mostrar</button></span>
+    </label>
+    <button class="btn btn-yel btn-block" id="btn-login" type="submit">Entrar</button>
+    <div class="login-alt">
+      <button type="button" class="link" id="btn-signup">Criar conta</button>
+      <button type="button" class="link" id="link-forgot">Esqueci a senha</button>
     </div>
-    <div class="pass-foot"><span>Portão</span><span>Inglês · B2</span></div>
   </form>
 </div>
 
@@ -45,7 +41,7 @@
 <div id="app" class="app hidden">
 
   <nav class="tabbar" id="tabbar" aria-label="Navegação">
-    <div class="rail-brand">Fluência</div>
+    <div class="rail-brand"><i>F</i>Fluência</div>
     <button class="tab" data-view="v-decks" aria-label="Baralhos">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M3 7v11M21 7v11"/></svg><span>Baralhos</span>
     </button>
@@ -54,6 +50,9 @@
     </button>
     <button class="tab" data-view="v-erros" aria-label="Meus erros">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9 15.5H3z"/><path d="M12 10v4M12 16.6v.1"/></svg><span>Erros</span>
+    </button>
+    <button class="tab" data-view="v-nivel" aria-label="Nível">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4v-5h4v-5h4V5h4"/></svg><span>Nível</span>
     </button>
     <button class="tab" data-view="v-talk" aria-label="Conversar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H10l-4 3v-3H5z"/></svg><span>Conversar</span>
@@ -67,12 +66,13 @@
 
     <!-- ESTUDAR -->
     <section class="view active" id="v-study">
-      <header class="bar">
-        <button class="chip" id="deck-chip" aria-label="Trocar de baralho"><span id="deck-chip-name">—</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
-        <div class="bar-dir"><div class="bar-stats"><span id="stat-today-top">0</span> hoje · <span id="stat-streak-top">0</span> dias</div><button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button></div>
+      <header class="cab">
+        <button class="chip" id="deck-chip" aria-label="O que estudar"><span id="deck-chip-name">—</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+        <div class="dir"><button class="nv-pill" data-nvpill aria-label="Seu nível"></button><button class="voce-btn" data-voce aria-label="Você: números e ajustes">·</button></div>
       </header>
 
       <div class="study" id="study">
+        <div class="study-num"><span><b id="stat-today-top">0</b> hoje · <b id="stat-streak-top">0</b> dias seguidos</span><span id="study-dica">espaço vira · 1 a 4 responde</span></div>
         <div class="swipe-hint" aria-hidden="true"><span class="sh-l">Errei</span><span class="sh-r">Acertei</span></div>
         <div class="ticket-stage" id="ticket-stage">
           <article class="ticket" id="ticket" tabindex="0" aria-live="polite">
@@ -108,36 +108,84 @@
           <button class="btn btn-yel" id="btn-goto-decks">Criar meu primeiro baralho</button>
         </div>
       </div>
+    </section>
 
+    <!-- MEUS ERROS -->
+    <section class="view" id="v-erros">
+      <header class="cab">
+        <div class="cab-tx"><h1>Meus erros</h1><span class="sub" id="erros-resumo">cada erro cai num ponto de gramática</span></div>
+        <div class="dir"><button class="nv-pill" data-nvpill aria-label="Seu nível"></button><button class="voce-btn" data-voce aria-label="Você: números e ajustes">·</button></div>
+      </header>
+      <div class="kpis abas-kpi" id="erros-tabs" role="tablist">
+        <button class="kpi on est-treinando" data-tab="treinando" role="tab"><small>0</small><span>Treinando</span></button>
+        <button class="kpi est-quase" data-tab="quase" role="tab"><small>0</small><span>Quase lá</span></button>
+        <button class="kpi est-dominado" data-tab="dominado" role="tab"><small>0</small><span>Dominados</span></button>
+      </div>
+      <p class="hint" id="erros-dica" style="margin:-6px 2px 12px"></p>
+      <div class="ponto-lista" id="erros-lista"></div>
+      <button class="btn btn-yel btn-block" id="btn-treinar-erros">Treinar os erros</button>
+    </section>
 
+    <!-- NÍVEL -->
+    <section class="view" id="v-nivel">
+      <header class="cab">
+        <div class="cab-tx"><h1>Nível</h1><span class="sub">régua de A1 a C1 · conta como seu a partir de 70%</span></div>
+        <div class="dir"><button class="voce-btn" data-voce aria-label="Você: números e ajustes">·</button></div>
+      </header>
+      <div id="nivel-hero"></div>
+
+      <div class="parte"><h2 id="falta-titulo">O que falta</h2><span class="n" id="falta-n"></span><p>Cada parte em 70% fecha o nível. Uma parte acima compensa outra abaixo.</p></div>
+      <div class="card" id="nivel-falta"></div>
+
+      <div class="parte"><h2>Os níveis e os pontos</h2><span class="n">64 pontos de gramática</span><p>Toque num nível pra ver os pontos dele. Toque num ponto pra ver a aula e treinar.</p></div>
+      <div class="legenda">
+        <span class="est-dominado"><i></i>Dominado</span><span class="est-presumido"><i></i>Sabido, pelo nivelamento</span><span class="est-quase"><i></i>Quase lá</span><span class="est-treinando"><i></i>Treinando</span><span class="est-nao-medido"><i></i>Ainda não medido</span>
+      </div>
+      <div id="nivel-lista"></div>
+
+      <div class="parte"><h2>Como você sobe de nível</h2><p>O caminho de cada resposta até um nível novo, com os seus números de agora.</p></div>
+      <div class="fluxo" id="nivel-fluxo"></div>
+
+      <div class="parte"><h2>Teste de nível</h2><p>Confirma um nível quando a régua passa de 70%.</p></div>
+      <div id="level-start" class="panel">
+        <p class="hint">Dez perguntas, uma por tela, corrigidas pela IA. Dá uma estimativa na escala CEFR, e os erros entram no seu mapa. Não substitui um teste oficial.</p>
+        <label class="field"><span>Baralho (define idioma e objetivo)</span><select id="level-deck"></select></label>
+        <button class="btn btn-yel btn-block" id="btn-level-start">Começar o teste</button>
+      </div>
+      <div id="level-test" class="hidden"></div>
+      <div id="level-result" class="hidden"></div>
+      <div class="section-title">Testes anteriores</div>
+      <div class="list" id="level-history"></div>
     </section>
 
     <!-- CONVERSAR -->
     <section class="view" id="v-talk">
       <div class="talk-setup" id="talk-setup">
-        <header class="page-head">
-          <button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button>
-          <div class="eyebrow">Conversa com correção</div>
-          <h1>Conversar</h1>
-          <p class="lede">A IA faz o papel de quem você vai encontrar lá fora. Responda falando ou escrevendo. No fim, sai um relatório com os erros e cards novos.</p>
+        <header class="cab">
+          <div class="cab-tx"><h1>Conversar</h1><span class="sub">conversa com correção a cada fala</span></div>
+          <div class="dir"><button class="nv-pill" data-nvpill aria-label="Seu nível"></button><button class="voce-btn" data-voce aria-label="Você: números e ajustes">·</button></div>
         </header>
         <div class="talk-report hidden" id="talk-report"></div>
-        <div class="panel">
-          <div class="field"><span>Baralho</span><select id="talk-deck"></select></div>
-          <div class="field"><span>Cenário</span>
-            <div class="chips" id="talk-scenario" role="radiogroup">
-              <button class="pill on" data-v="rh" role="radio" aria-checked="true">Entrevista de RH</button>
-              <button class="pill" data-v="tecnica" role="radio" aria-checked="false">Entrevista técnica</button>
-              <button class="pill" data-v="viagem" role="radio" aria-checked="false">Viagem</button>
-              <button class="pill" data-v="livre" role="radio" aria-checked="false">Conversa livre</button>
-              <button class="pill" data-v="falar2" role="radio" aria-checked="false">Falar 2 minutos</button>
+        <div class="card">
+          <div class="card-t">Nova conversa</div>
+          <div class="card-c">
+            <p class="hint">A IA faz o papel de quem você vai encontrar lá fora. Responda falando ou escrevendo. Cada erro vai pro seu mapa e conta no "uso" da régua.</p>
+            <div class="field"><span>Baralho</span><select id="talk-deck"></select></div>
+            <div class="field"><span>Cenário</span>
+              <div class="chips" id="talk-scenario" role="radiogroup">
+                <button class="pill on" data-v="rh" role="radio" aria-checked="true">Entrevista de RH</button>
+                <button class="pill" data-v="tecnica" role="radio" aria-checked="false">Entrevista técnica</button>
+                <button class="pill" data-v="viagem" role="radio" aria-checked="false">Viagem</button>
+                <button class="pill" data-v="livre" role="radio" aria-checked="false">Conversa livre</button>
+                <button class="pill" data-v="falar2" role="radio" aria-checked="false">Falar 2 minutos</button>
+              </div>
             </div>
+            <label class="field"><span>Vaga ou contexto (opcional)</span>
+              <textarea id="talk-context" rows="3" placeholder="Cole a vaga, ou descreva a situação"></textarea>
+            </label>
+            <label class="check"><input type="checkbox" id="talk-autospeak" checked> Ler as falas da IA em voz alta</label>
+            <button class="btn btn-yel btn-block" id="btn-talk-start">Começar a conversa</button>
           </div>
-          <label class="field"><span>Vaga ou contexto (opcional)</span>
-            <textarea id="talk-context" rows="3" placeholder="Cole a vaga, ou descreva a situação"></textarea>
-          </label>
-          <label class="check"><input type="checkbox" id="talk-autospeak" checked> Ler as falas da IA em voz alta</label>
-          <button class="btn btn-yel btn-block" id="btn-talk-start">Começar a conversa</button>
         </div>
         <div class="section-title">Conversas anteriores</div>
         <div class="list" id="talk-history"></div>
@@ -160,21 +208,18 @@
 
     <!-- BARALHOS -->
     <section class="view" id="v-decks">
-      <header class="page-head row">
-        <div>
-          <div class="eyebrow">Seus destinos</div>
-          <h1>Baralhos</h1>
-        </div>
-        <div class="head-acoes"><button class="btn btn-yel btn-sm" id="btn-new-deck">+ Novo</button><button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button></div>
+      <header class="cab">
+        <div class="cab-tx"><h1>Baralhos</h1><span class="sub">um baralho é um objetivo, e a IA monta a trilha</span></div>
+        <div class="dir"><button class="btn btn-yel btn-sm" id="btn-new-deck">+ Novo</button><button class="voce-btn" data-voce aria-label="Você: números e ajustes">·</button></div>
       </header>
       <div class="deck-list" id="deck-list"></div>
     </section>
 
     <!-- BARALHO -->
     <section class="view" id="v-deck">
-      <header class="bar">
+      <header class="cab">
         <button class="icon-btn" id="deck-back" aria-label="Voltar aos baralhos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <div class="bar-title" id="deck-name">—</div>
+        <div class="cab-tx cab-meio"><h1 id="deck-name">—</h1></div>
         <button class="icon-btn" id="deck-menu" aria-label="Opções do baralho"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
       </header>
       <div class="deck-meta" id="deck-meta"></div>
@@ -220,47 +265,31 @@
 
     <!-- JUNTOS -->
     <section class="view" id="v-together">
-      <header class="page-head">
-        <button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button>
-        <div class="eyebrow">Vocês dois</div>
-        <h1>Juntos</h1>
+      <header class="cab">
+        <div class="cab-tx"><h1>Juntos</h1><span class="sub">vocês dois, sem ranking</span></div>
+        <div class="dir"><button class="nv-pill" data-nvpill aria-label="Seu nível"></button><button class="voce-btn" data-voce aria-label="Você: números e ajustes">·</button></div>
       </header>
       <div class="together" id="together-grid"></div>
-      <div class="panel route">
-        <div class="route-head"><span class="section-title flat">Roteiro do carro</span><span class="tag" id="route-date">—</span></div>
-        <div id="route-body"><p class="empty-line">Nenhum roteiro hoje ainda.</p></div>
-        <div class="row-2">
-          <button class="btn btn-yel" id="btn-carmode" disabled>Modo no carro</button>
-          <button class="btn btn-ghost" id="btn-route">Gerar o de hoje</button>
+      <div class="card route">
+        <div class="card-t">Roteiro do carro <span class="dir tag" id="route-date">—</span></div>
+        <div class="card-c">
+          <div id="route-body"><p class="empty-line">Nenhum roteiro hoje ainda.</p></div>
+          <div class="row-2">
+            <button class="btn btn-yel" id="btn-carmode" disabled>Modo no carro</button>
+            <button class="btn btn-ghost" id="btn-route">Gerar o de hoje</button>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- MEUS ERROS -->
-    <section class="view" id="v-erros">
-      <header class="page-head">
-        <button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button>
-        <div class="eyebrow">Seu mapa</div>
-        <h1>Meus erros</h1>
-        <p class="lede" id="erros-resumo"></p>
-      </header>
-      <div class="seg" id="erros-tabs" role="tablist">
-        <button class="on" data-tab="treinando" role="tab">Treinando <small>0</small></button>
-        <button data-tab="quase" role="tab">Quase lá <small>0</small></button>
-        <button data-tab="dominado" role="tab">Dominados <small>0</small></button>
-      </div>
-      <div class="ponto-lista" id="erros-lista"></div>
-      <button class="btn btn-yel btn-block" id="btn-treinar-erros">Treinar os erros</button>
-    </section>
-
     <!-- UM PONTO: aula e treino -->
     <section class="view" id="v-ponto">
-      <header class="bar">
-        <button class="icon-btn" id="ponto-back" aria-label="Voltar aos erros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <div class="bar-title" id="ponto-nome">—</div>
-        <span style="width:44px"></span>
+      <header class="cab">
+        <button class="icon-btn" id="ponto-back" aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="cab-tx cab-meio"><h1 id="ponto-nome">—</h1></div>
       </header>
       <div class="deck-meta" id="ponto-meta"></div>
+      <p class="ponto-sobre" id="ponto-sobre"></p>
       <button class="btn btn-yel btn-block" id="btn-treinar-ponto">Treinar só este</button>
       <div class="section-title">O que você errou</div>
       <div class="ponto-erros" id="ponto-erros"></div>
@@ -269,10 +298,9 @@
 
     <!-- O PROGRESSO DO OUTRO, SÓ PRA VER -->
     <section class="view" id="v-outro">
-      <header class="bar">
+      <header class="cab">
         <button class="icon-btn" id="outro-back" aria-label="Voltar para Juntos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <div class="bar-title" id="outro-nome">—</div>
-        <span style="width:44px"></span>
+        <div class="cab-tx cab-meio"><h1 id="outro-nome">—</h1><span class="sub">só pra ver</span></div>
       </header>
       <div class="panel" id="outro-regua"></div>
       <div class="section-title">Números</div>
@@ -283,14 +311,13 @@
 
     <!-- VOCÊ -->
     <section class="view" id="v-you">
-      <header class="bar">
-        <button class="icon-btn" id="you-back" aria-label="Voltar para Juntos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <div class="bar-title">Você</div>
-        <span></span>
+      <header class="cab">
+        <button class="icon-btn" id="you-back" aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="cab-tx cab-meio"><h1>Você</h1></div>
+        <div class="dir"><button class="nv-pill" data-nvpill aria-label="Seu nível"></button></div>
       </header>
       <div class="seg" id="you-tabs" role="tablist">
-        <button class="on" data-tab="stats" role="tab">Estatísticas</button>
-        <button data-tab="level" role="tab">Régua</button>
+        <button class="on" data-tab="stats" role="tab">Números</button>
         <button data-tab="settings" role="tab">Ajustes</button>
       </div>
 
@@ -299,7 +326,7 @@
           <div class="hero-num" id="stat-streak">0</div>
           <div class="hero-lbl">dias seguidos estudando</div>
         </div>
-        <select id="stats-deck-select" class="select-inline" aria-label="Baralho das estatísticas"></select>
+        <select id="stats-deck-select" class="select-inline" aria-label="Baralho dos números"></select>
         <div class="stat-grid">
           <div><b id="stat-today">0</b><span>revisões hoje</span></div>
           <div><b id="stat-accuracy">—</b><span>precisão, 30 dias</span></div>
@@ -308,23 +335,9 @@
           <div><b id="stat-spoken">0</b><span>frases faladas, 30 dias</span></div>
           <div><b id="stat-total-cards">0</b><span>cards no total</span></div>
         </div>
-        <div class="panel"><div class="section-title flat">Revisões, últimos 7 dias</div><div class="bars" id="bar-chart"></div></div>
-        <div class="panel"><div class="section-title flat">Aprendidos por semana</div><div class="bars" id="learned-chart"></div></div>
-        <div class="panel"><div class="section-title flat">Saúde do vocabulário <span class="tag" id="mastered-tag">0</span></div><div class="health" id="health-list"></div></div>
-      </div>
-
-      <div class="tabpane hidden" data-pane="level">
-        <div class="panel" id="regua-box"></div>
-        <div class="section-title">Teste de nível</div>
-        <div id="level-start" class="panel">
-          <p class="lede">Dez perguntas, uma por tela, corrigidas pela IA. Dá uma estimativa de nível na escala CEFR. Refaça uma vez por mês. Não substitui um teste oficial.</p>
-          <label class="field"><span>Baralho (define idioma e objetivo)</span><select id="level-deck"></select></label>
-          <button class="btn btn-yel btn-block" id="btn-level-start">Começar a avaliação</button>
-        </div>
-        <div id="level-test" class="hidden"></div>
-        <div id="level-result" class="hidden"></div>
-        <div class="section-title">Histórico</div>
-        <div class="list" id="level-history"></div>
+        <div class="card"><div class="card-t">Revisões, últimos 7 dias</div><div class="card-c"><div class="bars" id="bar-chart"></div></div></div>
+        <div class="card"><div class="card-t">Aprendidos por semana</div><div class="card-c"><div class="bars" id="learned-chart"></div></div></div>
+        <div class="card"><div class="card-t">Saúde do vocabulário <span class="dir tag" id="mastered-tag">0</span></div><div class="card-c"><div class="health" id="health-list"></div></div></div>
       </div>
 
       <div class="tabpane hidden" data-pane="settings">

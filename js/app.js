@@ -3,7 +3,7 @@ import { pedir } from "./ia.js";
 import * as P from "./ia-pedidos.js";
 import { MODOS, sortear, registrarResposta, estadoModo, dominio, lacuna, hojeLocal, sequencia } from "./selecao.js";
 import * as voz from "./voz.js";
-import { PONTOS, PONTO, NIVEIS_REGUA, SEMENTE_ES16, nomePonto, nivelPonto, ordemNivel } from "./catalogo.js";
+import { PONTOS, PONTO, NIVEIS_REGUA, META_VOCAB, SEMENTE_ES16, nomePonto, nivelPonto, ordemNivel } from "./catalogo.js";
 import * as E from "./erros.js";
 
 const { IDIOMAS, NIVEIS, MAX_CARD_LEVEL, idiomaLabel } = P;
@@ -41,7 +41,7 @@ const state = {
   // Mapa de erros (ES-22)
   pontos: {}, erros: {}, producao: {}, exercicios: {}, aulas: {},
   entrada: "tudo", pontoTreino: null, desdeExercicio: 0, gerando: {},
-  pontoId: null, errosAba: "treinando", outroUid: null,
+  pontoId: null, errosAba: "treinando", outroUid: null, nivelSel: null,
 };
 const prefs = () => Object.assign(
   { modos: ["rec", "prod", "ouv", "comp"], voz: "", lento: 0.7, autoplay: false, vibrar: true },
@@ -227,55 +227,47 @@ function confirmar({ titulo, texto, botao = "Confirmar", perigo = true }){
 }
 
 // =========================================================
-// LETRAS DE PAINEL DE AEROPORTO
+// A FRASE: texto limpo, o alvo em destaque, as palavras entrando uma a uma
 // =========================================================
-const GIRO = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 function painel(el, texto, alvo, animar = true){
   el.innerHTML = "";
-  el.className = "flap" + (texto.length > 95 ? " muito-longo" : texto.length > 60 ? " longo" : "");
+  el.className = "flap" + (texto.length > 95 ? " muito-longo" : texto.length > 60 ? " longo" : "") + (animar && !reduzMovimento ? " entra" : "");
   let ini = -1, fim = -1;
   const m = alvo && texto.match(reAlvo(alvo));
   if(m){ ini = m.index; fim = m.index + m[0].length; }
-  const tiles = [];
   let pos = 0;
-  for(const palavra of texto.split(" ")){
+  texto.split(" ").forEach((palavra, i) => {
     const w = document.createElement("span");
     w.className = "fw";
-    // A lacuna do Completar vira uma peça só, de largura limitada.
-    const pedacos = palavra.match(/_+|[^_]/g) || [];
-    for(const ch of pedacos){
-      const t = document.createElement("span");
-      if(ch[0] === "_"){
+    w.style.animationDelay = `${Math.min(i * 35, 600)}ms`;
+    // Cada palavra em pedaços: a lacuna do Completar, o trecho do alvo e o resto.
+    const pedacos = palavra.match(/_+|[^_]+/g) || [];
+    for(const p of pedacos){
+      if(p[0] === "_"){
+        const t = document.createElement("span");
         t.className = "ft gap";
-        t.style.width = `${Math.min(ch.length, 9) * 0.62 + 0.4}em`;
-        t.textContent = " ";
-      }else{
-        t.className = "ft" + (pos >= ini && pos < fim ? " al" : "");
-        t.textContent = ch;
+        t.style.width = `${Math.min(p.length, 9) * 0.5 + 0.6}em`;
+        w.appendChild(t);
+        pos += p.length;
+        continue;
       }
-      t.dataset.c = t.textContent;
-      w.appendChild(t);
-      tiles.push(t);
-      pos += ch.length;
+      let k = 0;
+      while(k < p.length){
+        const dentro = pos + k >= ini && pos + k < fim;
+        let j = k;
+        while(j < p.length && (pos + j >= ini && pos + j < fim) === dentro) j++;
+        const t = document.createElement("span");
+        if(dentro) t.className = "ft al";
+        t.textContent = p.slice(k, j);
+        w.appendChild(t);
+        k = j;
+      }
+      pos += p.length;
     }
     pos++; // o espaço
     el.appendChild(w);
-  }
-  if(!animar || reduzMovimento) return;
-  const t0 = performance.now();
-  const alvos = tiles.map((t, i) => ({ t, ate: 140 + Math.min(i * 14, 520) + Math.random() * 120, ok: false }))
-    .filter(a => /[A-Za-z]/.test(a.t.dataset.c));
-  alvos.forEach(a => a.t.classList.add("gira"));
-  const passo = agora => {
-    let faltam = 0;
-    for(const a of alvos){
-      if(a.ok) continue;
-      if(agora - t0 >= a.ate){ a.t.textContent = a.t.dataset.c; a.t.classList.remove("gira"); a.ok = true; }
-      else{ a.t.textContent = GIRO[(Math.random() * GIRO.length) | 0]; faltam++; }
-    }
-    if(faltam) requestAnimationFrame(passo);
-  };
-  requestAnimationFrame(passo);
+    el.appendChild(document.createTextNode(" "));
+  });
 }
 
 // =========================================================
@@ -475,7 +467,7 @@ function publicarJuntos(imediato = false){
 // NAVEGAÇÃO
 // =========================================================
 const ABA_DE = { "v-deck": "v-decks", "v-you": "v-together", "v-ponto": "v-erros", "v-outro": "v-together" };
-const ORDEM = ["v-decks", "v-study", "v-erros", "v-talk", "v-together"];
+const ORDEM = ["v-decks", "v-study", "v-erros", "v-nivel", "v-talk", "v-together"];
 let viewAtual = "v-study";
 
 function irPara(view, { camada = false } = {}){
@@ -498,7 +490,9 @@ function irPara(view, { camada = false } = {}){
   if(para === "v-talk") abrirConversar();
   if(para === "v-together") abrirJuntos();
   if(para === "v-you") abrirVoce();
+  if(para === "v-nivel") abrirNivel();
   if(para === "v-erros") renderErros();
+  atualizarPilulas();
   if(para === "v-ponto") renderPonto();
   if(para === "v-outro") renderOutro();
   if(camada) abrirCamada(() => irPara(de));
@@ -515,6 +509,7 @@ function atualizarTopo(){
   $("deck-chip-name").textContent = nomeEntrada();
   $("stat-today-top").textContent = hojeR();
   $("stat-streak-top").textContent = sequencia(state.dias);
+  atualizarPilulas();
 }
 
 function lembrarDeck(id){ try{ localStorage.setItem("fluencia:lastDeck", id); }catch(e){} }
@@ -1878,10 +1873,10 @@ function renderJuntos(){
           <div><b>${esc(m.Nivel || "—")}</b><span>nível</span></div>
         </div>
         <div class="bars mini">${dias.map(r => `<div class="bar-col"><div class="bar-fill" style="height:${Math.max(6, Math.round(r / max * 100))}%"></div></div>`).join("")}</div>
-        ${m.Regua && m.Regua.prox ? `<div class="m-regua"><span>${esc(m.Regua.prox)} · ${m.Regua.pct}%</span><div class="progress"><i style="width:${m.Regua.pct}%"></i></div></div>` : ""}
+        ${m.Regua && m.Regua.prox ? `<div class="m-regua"><span><b>${esc(m.Regua.atual || "—")}</b> → ${esc(m.Regua.prox)} ${m.Regua.pct}% <span style="color:var(--tx3)">de 70%</span></span><div class="progress"><i style="width:${m.Regua.pct}%"></i><em></em></div></div>` : ""}
         ${(m.Fracos3 || []).filter(id => PONTO[id]).length ? `<div class="m-fracos">${m.Fracos3.filter(id => PONTO[id]).map(id => `<span>${esc(nomePonto(id))}</span>`).join("")}</div>` : ""}
       </div>
-      ${eu ? '<button class="btn btn-ghost btn-sm m-you" id="btn-you">Você · régua e ajustes</button>' : `<button class="btn btn-ghost btn-sm m-you" data-outro="${uid}">Ver o progresso</button>`}`;
+      ${eu ? '<button class="btn btn-ghost btn-sm m-you" id="btn-you">Você · números e ajustes</button>' : `<button class="btn btn-ghost btn-sm m-you" data-outro="${uid}">Ver o progresso</button>`}`;
     grid.appendChild(el);
   });
   $("btn-you")?.addEventListener("click", () => irPara("v-you", { camada: true }));
@@ -1965,12 +1960,13 @@ function irParaAba(view){
 const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
 const dataCurta = iso => iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
 
-function linhaPonto({ id, estado, erros, o, c, m }){
+function linhaPonto({ id, estado, erros = 0, o, c, m, tip }){
   const nv = nivelPonto(id);
   return `<button class="ponto-row est-${estado}" data-id="${id}">
+    <span class="pr-nv">${nv === "X" ? "PT" : nv}</span>
     <span class="pr-nome">${esc(nomePonto(id))}</span>
-    <span class="pr-num">${plural(erros, "erro", "erros")} · ${nv === "X" ? "todos" : nv}</span>
-    ${o ? `<span class="pr-ex"><s>${esc(o)}</s> → ${esc(c)}</span>` : ""}
+    <span class="pr-num">${erros ? plural(erros, "erro", "erros") + " · " : ""}${(E.NOME_ESTADO[estado] || "").toLowerCase()}</span>
+    ${o ? `<span class="pr-ex"><s>${esc(o)}</s> → ${esc(c)}</span>` : tip ? `<span class="pr-ex">erro comum: ${esc(tip)}</span>` : ""}
     ${m !== undefined ? `<span class="dom"><i style="width:${Math.round(m * 100)}%"></i></span>` : ""}
   </button>`;
 }
@@ -1981,7 +1977,12 @@ function renderErros(){
   const por = { treinando: [], quase: [], dominado: [] };
   lista.forEach(x => por[x.estado] && por[x.estado].push(x));
   const total = lista.reduce((a, x) => a + x.reg.erros, 0);
-  $("erros-resumo").textContent = lista.length ? `${plural(lista.length, "ponto", "pontos")} · ${plural(total, "erro", "erros")}` : "";
+  $("erros-resumo").textContent = lista.length ? `${plural(lista.length, "ponto", "pontos")} com erro · ${plural(total, "erro", "erros")} no total` : "cada erro cai num ponto de gramática";
+  $("erros-dica").textContent = {
+    treinando: "Errou há pouco. Os exercícios do Tudo puxam estes primeiro.",
+    quase: "Domínio bom. Falta acertar em 3 dias diferentes, sem errar há 7.",
+    dominado: "Acertou em 3 dias, sem errar há 7. Errou de novo, o ponto volta pra Treinando.",
+  }[state.errosAba] || "";
   $("erros-tabs").querySelectorAll("button").forEach(b => {
     b.classList.toggle("on", b.dataset.tab === state.errosAba);
     b.querySelector("small").textContent = por[b.dataset.tab].length;
@@ -2029,6 +2030,12 @@ function renderPonto(){
   $("ponto-nome").textContent = nomePonto(id);
   $("ponto-meta").innerHTML = `<span class="tag yel">${nv === "X" ? "todos os níveis" : nv}</span><span class="tag est-${estado}">${E.NOME_ESTADO[estado]}</span>` +
     (reg ? `<span class="tag">${plural(reg.erros || 0, "erro", "erros")}</span><span class="tag">domínio ${Math.round((reg.m || 0) * 100)}%</span>` : "");
+  const p = PONTO[id];
+  $("ponto-sobre").innerHTML = (nv === "X"
+    ? "Vale pra todos os níveis, e conta como erro na régua a partir do B1."
+    : `Conta na gramática do <b>${nv}</b>: é 1 dos ${PONTOS.filter(x => x.n === nv).length} pontos dele.`) +
+    ` Erro comum de quem fala português: <b>${esc(p.tip)}</b>.` +
+    (estado === "presumido" ? " Conta como sabido pelo nivelamento, até um erro dizer o contrário." : "");
   const erros = errosDoPonto(id);
   $("ponto-erros").innerHTML = erros.length ? erros.slice(0, 20).map(([k, e]) => `
     <div class="erro"><div><span class="fb-label">você</span>${esc(e.o)}</div><div><span class="fb-label">certo</span><b>${esc(e.c)}</b></div>
@@ -2092,7 +2099,7 @@ function moverErro(k){
   }));
 }
 
-// ---------- Régua ----------
+// ---------- Régua (Juntos e o progresso do outro) ----------
 // niveis: [{ n, pct }] de A1 a C1, com pct de 0 a 1.
 function reguaHtml(niveis, atual, interativo){
   const idx = atual ? NIVEIS_REGUA.indexOf(atual) : -1;
@@ -2104,40 +2111,224 @@ function reguaHtml(niveis, atual, interativo){
   }).join("")}<div class="rg-legenda">a partir de ${Math.round(E.LIMIAR * 100)}%, o nível conta como seu</div></div>`;
 }
 
-function renderRegua(){
-  const box = $("regua-box");
+// =========================================================
+// NÍVEL: onde você está, quanto falta pra cada nível, os pontos e o fluxograma
+// =========================================================
+// O que cada nível quer dizer na prática (conhecimento do modelo, a régua CEFR).
+const NOME_NIVEL = { A1: "Iniciante", A2: "Básico", B1: "Intermediário", B2: "Intermediário avançado", C1: "Avançado" };
+const FAZ_NIVEL = {
+  A1: "se apresentar e frases do dia a dia",
+  A2: "rotina, passado e se virar numa viagem",
+  B1: "falar de trabalho, planos e hipóteses simples",
+  B2: "entrevista e reunião em inglês, com nuance",
+  C1: "falar e escrever com naturalidade e registro",
+};
+const pct = x => Math.round((x || 0) * 100);
+const SETA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+const ABRE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>';
+
+const classeNivel = (n, r) => {
+  const i = NIVEIS_REGUA.indexOf(n), idx = r.atual ? NIVEIS_REGUA.indexOf(r.atual) : -1;
+  return i <= idx ? "seu" : i === idx + 1 ? "prox" : "";
+};
+const rotuloNivel = c => c === "seu" ? "seu" : c === "prox" ? "próximo" : "depois";
+
+// A pílula do nível, no topo de toda tela: o de agora e o próximo, com a barra até 70%.
+function atualizarPilulas(){
+  const pilulas = document.querySelectorAll("[data-nvpill]");
+  if(!fb.sessao || !fb.sessao.uid || !temIngles()){ pilulas.forEach(p => p.classList.add("hidden")); return; }
   const r = minhaRegua();
-  const base = nivelBase();
-  box.innerHTML = `
-    <div class="route-head"><span class="section-title flat">Régua de nível</span><span class="tag yel">${r.atual ? "Seu nível: " + r.atual : "Ainda sem nível"}</span></div>
-    ${r.prox ? `<p class="hint">Próximo: <b style="color:var(--ink)">${r.prox}</b>, com ${Math.round(r.pctProx * 100)}%. Toque num nível pra ver o que ele pede.</p>` : ""}
-    ${reguaHtml(r.niveis, r.atual, true)}
-    ${base ? `<p class="hint">Parte do ${base} ${state.perfil.Base ? `do nivelamento de ${dataCurta(state.perfil.Base.data + "T12:00:00")}` : "do último teste de Nível"}: os pontos até ele contam como sabidos, até um erro dizer o contrário.</p>`
-      : '<p class="hint">Faça o teste de Nível uma vez, logo abaixo: a régua parte dele.</p>'}`;
-  box.querySelectorAll(".rg-linha").forEach(b => b.addEventListener("click", () => detalheNivel(b.dataset.nivel, r)));
+  const html = `<b class="${r.atual ? "" : "sem"}">${r.atual || "—"}</b>` + (r.prox
+    ? `<span class="nvp-bar"><i style="width:${pct(r.pctProx)}%"></i><em></em></span><span class="nvp-prox">${r.prox} ${pct(r.pctProx)}%</span>`
+    : "");
+  const titulo = r.prox ? `Seu nível: ${r.atual || "nenhum ainda"}. ${r.prox} em ${pct(r.pctProx)}%; conta como seu em 70%.` : `Seu nível: ${r.atual}`;
+  pilulas.forEach(p => { p.classList.remove("hidden"); p.innerHTML = html; p.title = titulo; });
 }
 
-function detalheNivel(n, r){
+function abrirNivel(){
+  preencherSelect($("level-deck"), state.currentDeckId);
+  renderNivel();
+  carregarNiveis();
+}
+
+function renderNivel(){
+  const r = minhaRegua();
+  const base = nivelBase();
+  if(!state.nivelSel || !NIVEIS_REGUA.includes(state.nivelSel)) state.nivelSel = r.prox || r.atual || "A1";
+  const sel = state.nivelSel;
+
+  // O topo: o de agora, o próximo, a barra até 70% e a escada inteira
+  const p = pct(r.pctProx);
+  const frase = r.prox
+    ? `O <b>${r.prox}</b> está em <b>${p}%</b>. ${p >= 70 ? "Já passou de 70%: confirme no teste de nível, no fim desta tela." : `Faltam <b>${70 - p} pontos</b> pra chegar a 70% e ele contar como seu.`}`
+    : `Você chegou ao <b>${r.atual}</b>, o topo da régua.`;
+  const leg = `<div class="nv-barra-leg">${Math.abs(p - 70) >= 13 ? `<span class="agora" style="left:${Math.max(5, Math.min(95, p))}%">${p}%</span>` : ""}<span class="m70">70%</span></div>`;
+  $("nivel-hero").innerHTML = `<div class="nv-hero">
+    <div class="nv-agora">
+      <div class="nv-big ${r.atual ? "" : "sem"}"><b>${r.atual || "—"}</b><span>seu nível</span></div>
+      ${r.prox ? `<span class="nv-seta">${SETA}</span><div class="nv-big prox"><b>${r.prox}</b><span>próximo</span></div>` : ""}
+      <div class="nv-frase">${frase}${base ? "" : " A régua parte do teste de nível: faça uma vez, no fim desta tela."}</div>
+    </div>
+    ${r.prox ? `<div><div class="nv-barra"><i style="width:${p}%"></i><em></em></div>${leg}</div>` : ""}
+    <div class="escada">${r.niveis.map(nv => {
+      const c = classeNivel(nv.n, r);
+      return `<button class="degrau ${c}${nv.n === sel ? " on" : ""}" data-nivel="${nv.n}" aria-pressed="${nv.n === sel}">
+        <b>${nv.n}</b><span class="dg-bar"><i style="width:${pct(nv.pct)}%"></i><em></em></span><span class="dg-pct">${pct(nv.pct)}%</span><span class="dg-st">${rotuloNivel(c)}</span></button>`;
+    }).join("")}</div>
+  </div>`;
+  $("nivel-hero").querySelectorAll(".degrau").forEach(b => b.addEventListener("click", () => {
+    state.nivelSel = b.dataset.nivel;
+    renderNivel();
+    $("falta-titulo").scrollIntoView({ behavior: reduzMovimento ? "auto" : "smooth", block: "center" });
+  }));
+
+  renderFalta(r, sel);
+  renderListaNiveis(r, sel);
+  $("nivel-fluxo").innerHTML = fluxoHtml(r);
+}
+
+// O que falta pra um nível, parte por parte, em coisas que dá pra fazer.
+function renderFalta(r, n){
   const nv = r.niveis.find(x => x.n === n);
   const base = nivelBase();
-  const pts = PONTOS.filter(p => p.n === n).map(p => ({ p, e: E.estadoPonto(state.pontos[p.id], p.id, base) }));
-  const ordem = { treinando: 0, quase: 1, "nao-medido": 2, dominado: 3, presumido: 4 };
-  pts.sort((a, b) => ordem[a.e] - ordem[b.e]);
-  const c = abrirFolha(`
-    <h2 class="sheet-title">${n} · ${Math.round(nv.pct * 100)}%</h2>
-    <p class="sheet-sub">Metade vem da gramática, um quarto do vocabulário e um quarto do uso. Conta como seu a partir de 70%.</p>
-    <div class="stat-grid">
-      <div><b>${Math.round(nv.gram * 100)}%</b><span>gramática · ${nv.dominados} de ${nv.total} pontos</span></div>
-      <div><b>${Math.round(nv.vocab * 100)}%</b><span>vocabulário · meta de ${nv.metaVocab.toLocaleString("pt-BR")} palavras</span></div>
-      <div><b>${nv.uso === null ? "—" : Math.round(nv.uso * 100) + "%"}</b><span>${nv.uso === null ? `uso: sem medida (${r.frases} de ${E.MIN_FRASES_USO} frases)` : "uso: frases sem erro do nível, 30 dias"}</span></div>
-      <div><b>${nv.naoMedidos}</b><span>pontos ainda não medidos: entram como exercício no Tudo</span></div>
-    </div>
-    <div class="section-title flat">Os pontos do ${n}</div>
-    <div class="menu">${pts.map(({ p, e }) => `<button data-p="${p.id}"><span style="flex:1">${esc(p.nome)}</span><span class="tag est-${e}">${E.NOME_ESTADO[e]}</span></button>`).join("")}</div>`);
-  c.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => {
-    fecharFolha();
-    setTimeout(() => abrirPonto(b.dataset.p), 340);
+  const aprendidos = aprendidosIngles();
+  const f = E.faltaNivel(nv, { regs: state.pontos, base, aprendidos, frases: r.frases });
+  const c = classeNivel(n, r);
+  $("falta-titulo").textContent = c === "seu" ? `O ${n} já é seu` : `O que falta pro ${n}`;
+  $("falta-n").textContent = `${pct(nv.pct)}% de 70%`;
+  const milhar = x => x.toLocaleString("pt-BR");
+  const linha = (cls, nome, peso, pctTxt, barra, tem, falta, como) => `<div class="fl-linha ${cls}">
+    <span class="fl-nome">${nome}<small>${peso}</small></span><span class="fl-pct">${pctTxt}</span>
+    <span class="fl-barra"><i style="width:${barra}%"></i><em></em></span>
+    <span class="fl-tem" style="grid-column:1 / -1">${tem}</span>
+    <span class="fl-falta">${falta}</span>
+    <span class="fl-como">${como}</span></div>`;
+  const primeiros = f.gram.ids.slice(0, 3).map(id => esc(nomePonto(id)));
+  const usoSem = f.uso.pct === null;
+  $("nivel-falta").innerHTML =
+    linha(f.gram.ok ? "ok" : "", "Gramática", "metade do nível", `${pct(f.gram.pct)}%`, pct(f.gram.pct),
+      `${f.gram.dominados} de ${f.gram.total} pontos do ${n} dominados ou sabidos`,
+      f.gram.ok ? "Já passou de 70%." : `Falta: dominar mais <b>${plural(f.gram.pontos, "ponto", "pontos")}</b>${primeiros.length ? `, começando por ${primeiros.join(", ")}` : ""}.`,
+      "Toque num ponto do nível, logo abaixo, e use Treinar só este. Dominado é acertar em 3 dias diferentes, sem errar há 7.") +
+    linha(f.vocab.ok ? "ok" : "", "Vocabulário", "um quarto", `${pct(f.vocab.pct)}%`, pct(f.vocab.pct),
+      base ? `cerca de ${milhar(f.vocab.palavras)} de ${milhar(f.vocab.meta)} palavras: o ${base} conta como ${milhar(META_VOCAB[base])}, mais ${milhar(aprendidos)} cards aprendidos`
+        : `${milhar(f.vocab.palavras)} de ${milhar(f.vocab.meta)} palavras, contando os cards aprendidos`,
+      f.vocab.ok ? "Já passou de 70%." : `Falta: aprender mais <b>${milhar(f.vocab.falta)} cards</b>.`,
+      "Gere os 10 cards de cada unidade em Baralhos e estude até virarem aprendidos.") +
+    linha(usoSem ? "sem" : f.uso.ok ? "ok" : "", "Uso", "um quarto", usoSem ? "—" : `${pct(f.uso.pct)}%`, usoSem ? 0 : pct(f.uso.pct),
+      usoSem ? `sem medida: ${plural(r.frases, "frase sua", "frases suas")} nos últimos 30 dias, de ${E.MIN_FRASES_USO} que a conta pede`
+        : `${pct(f.uso.pct)}% das ${r.frases} frases dos últimos 30 dias sem erro do ${n} ou de baixo`,
+      usoSem ? `Falta: escrever ou falar mais <b>${plural(f.uso.faltaFrases, "frase", "frases")}</b> pra essa parte passar a contar.`
+        : f.uso.ok ? "Já passou de 70%." : `Falta: <b>7 em cada 10 frases</b> sem erro do ${n} ou de baixo.`,
+      "Escrever 3 frases (aparece no Tudo uma vez por dia), Falar 2 minutos e as entrevistas do Conversar.") +
+    `<div class="fl-rodape">A conta: metade gramática, um quarto vocabulário e um quarto uso.${usoSem ? " Enquanto o uso não tem medida, a conta usa só as outras duas." : ""}</div>`;
+}
+
+// Os cinco níveis, cada um com todos os pontos de gramática dele.
+function renderListaNiveis(r, sel){
+  const base = nivelBase();
+  const aprendidos = aprendidosIngles();
+  const ordem = ["dominado", "presumido", "quase", "treinando", "nao-medido"];
+  const box = $("nivel-lista");
+  const cartao = (n, nv) => {
+    const est = PONTOS.filter(p => p.n === n).map(p => ({ p, e: E.estadoPonto(state.pontos[p.id], p.id, base) }));
+    const conta = Object.fromEntries(ordem.map(o => [o, est.filter(x => x.e === o).length]));
+    const linhas = est.map(({ p, e }) => {
+      const reg = state.pontos[p.id];
+      const ult = errosDoPonto(p.id)[0];
+      return linhaPonto({ id: p.id, estado: e, erros: (reg && reg.erros) || 0, o: ult && ult[1].o, c: ult && ult[1].c, tip: p.tip });
+    }).join("");
+    if(!nv) return `<details class="nivel-card" data-nivel="X">
+      <summary><span class="nc-cod">PT</span><span class="nc-nome"><b>Frase montada em português</b><span>vale pra todos os níveis; conta como erro a partir do B1</span></span><span class="nc-pct"></span><span class="nc-seta">${ABRE}</span></summary>
+      <div class="nc-corpo"><div class="ponto-lista">${linhas}</div></div></details>`;
+    const c = classeNivel(n, r);
+    const f = E.faltaNivel(nv, { regs: state.pontos, base, aprendidos, frases: r.frases });
+    const falta = [];
+    if(!f.gram.ok) falta.push(`dominar <b>${plural(f.gram.pontos, "ponto", "pontos")}</b>`);
+    if(!f.vocab.ok) falta.push(`aprender <b>${f.vocab.falta.toLocaleString("pt-BR")} cards</b>`);
+    if(f.uso.pct === null) falta.push(`mais <b>${plural(f.uso.faltaFrases, "frase", "frases")}</b> suas`);
+    else if(!f.uso.ok) falta.push("<b>7 em 10 frases</b> sem erro");
+    const mix = ordem.filter(o => conta[o]).map(o => `<i class="est-${o}" style="flex:${conta[o]};background:var(--e)"></i>`).join("");
+    return `<details class="nivel-card ${c}" data-nivel="${n}" ${n === sel ? "open" : ""}>
+      <summary><span class="nc-cod">${n}</span><span class="nc-nome"><b>${NOME_NIVEL[n]}</b><span>${FAZ_NIVEL[n]}</span></span><span class="nc-pct">${pct(nv.pct)}%</span><span class="nc-seta">${ABRE}</span>
+        <span class="nc-barra"><i style="width:${pct(nv.pct)}%"></i><em></em></span></summary>
+      <div class="nc-corpo">
+        <div class="nc-partes">
+          <div><b>${pct(nv.gram)}%</b><span>gramática · ${nv.dominados} de ${nv.total} pontos</span></div>
+          <div><b>${pct(nv.vocab)}%</b><span>vocabulário · meta de ${nv.metaVocab.toLocaleString("pt-BR")}</span></div>
+          <div><b>${nv.uso === null ? "—" : pct(nv.uso) + "%"}</b><span>uso · ${nv.uso === null ? "sem medida" : "frases limpas"}</span></div>
+        </div>
+        <div class="nc-falta">${c === "seu" ? `O ${n} já é seu.` : `Pra chegar a 70%: ${falta.join(", ") || "falta pouco"}.`}</div>
+        <div class="nc-mix">${mix}</div>
+        <div class="nc-mix-leg">${ordem.filter(o => conta[o]).map(o => `<span class="est-${o}"><i></i>${conta[o]} ${E.NOME_ESTADO[o].toLowerCase()}</span>`).join("")}</div>
+        <div class="ponto-lista">${linhas}</div>
+      </div></details>`;
+  };
+  box.innerHTML = r.niveis.map(nv => cartao(nv.n, nv)).join("") + cartao("X", null);
+  box.querySelectorAll(".ponto-row").forEach(b => b.addEventListener("click", () => abrirPonto(b.dataset.id)));
+  box.querySelectorAll("details[data-nivel]").forEach(d => d.addEventListener("toggle", () => {
+    if(d.open && NIVEIS_REGUA.includes(d.dataset.nivel) && d.dataset.nivel !== state.nivelSel){
+      state.nivelSel = d.dataset.nivel;
+      renderFalta(r, state.nivelSel);
+      $("nivel-hero").querySelectorAll(".degrau").forEach(b => { const on = b.dataset.nivel === state.nivelSel; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+    }
   }));
+}
+
+// O fluxograma: de cada resposta até um nível novo, com os números de agora.
+function fluxoHtml(r){
+  const base = nivelBase();
+  const est = PONTOS.map(p => E.estadoPonto(state.pontos[p.id], p.id, base));
+  const emTreino = E.pontosComErro(state.pontos, base).filter(x => x.estado !== "dominado").length;
+  const dominados = est.filter(e => e === "dominado").length;
+  const L = (x1, y1, x2, y2) => `<path class="fx-l" d="M${x1} ${y1}L${x2} ${y2}" marker-end="url(#fx-a)"/>`;
+  const caixa = (x, y, w, h, cls, linhas) => {
+    const cx = x + w / 2;
+    const passo = 14, y0 = y + h / 2 - (linhas.length - 1) * passo / 2 + 4;
+    return `<rect class="fx-caixa ${cls}" x="${x}" y="${y}" width="${w}" height="${h}" rx="8"/>` +
+      linhas.map(([t, c], i) => `<text class="${c || (i ? "fx-s" : "fx-t")}" x="${cx}" y="${y0 + i * passo}" text-anchor="middle">${esc(t)}</text>`).join("");
+  };
+  const losango = (cy, hw, hh, linhas) => {
+    const cx = 110;
+    return `<polygon class="fx-dec" points="${cx},${cy - hh} ${cx + hw},${cy} ${cx},${cy + hh} ${cx - hw},${cy}"/>` +
+      linhas.map((t, i) => `<text class="fx-t" style="font-size:11.5px" x="${cx}" y="${cy + 4 - (linhas.length - 1) * 7 + i * 14}" text-anchor="middle">${esc(t)}</text>`).join("");
+  };
+  const R = (x, y, t, cls) => `<text class="fx-r ${cls || ""}" x="${x}" y="${y}">${t}</text>`;
+  const prox = r.prox ? `${r.prox} em ${pct(r.pctProx)}%` : "no topo";
+  return `<svg viewBox="-12 0 388 692" role="img" aria-label="Fluxograma: você estuda e responde; o erro vira um ponto, treinado até ficar dominado; a régua sobe e o teste confirma o nível novo.">
+    <defs><marker id="fx-a" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fx-seta" d="M0 0L8 4L0 8z"/></marker></defs>
+    ${caixa(10, 8, 200, 54, "ac", [["Estudar · Tudo"], ["cards, 1 exercício a cada 3"], ["e Escrever 1 vez por dia"]])}
+    ${L(110, 62, 110, 80)}
+    ${caixa(10, 80, 200, 40, "", [["Você responde"], ["virando, escrevendo ou falando"]])}
+    ${L(110, 120, 110, 134)}
+    ${losango(164, 62, 30, ["Errou?"])}
+    ${L(172, 164, 232, 164)}${R(186, 157, "sim", "sim")}
+    ${caixa(232, 140, 120, 48, "bad", [["Vira erro"], ["num ponto do mapa"], [`em treino: ${emTreino}`, "fx-n bad"]])}
+    ${L(292, 188, 292, 204)}
+    ${caixa(232, 204, 120, 44, "", [["Aula e exercícios"], ["do ponto, mais vezes"]])}
+    <path class="fx-l volta" d="M352 226H370V100H212" marker-end="url(#fx-a)"/>
+    ${L(110, 194, 110, 214)}${R(118, 208, "não", "ok")}
+    ${caixa(10, 214, 200, 40, "", [["O ponto ganha domínio"], ["acerto sobe, erro derruba"]])}
+    ${L(110, 254, 110, 270)}
+    ${losango(306, 90, 36, ["Acertou em 3 dias", "sem errar há 7?"])}
+    ${L(200, 306, 232, 306)}${R(205, 299, "não")}
+    ${caixa(232, 286, 120, 40, "lado", [["Segue treinando"], ["volta ao estudo"]])}
+    ${L(110, 342, 110, 362)}${R(118, 356, "sim", "ok")}
+    ${caixa(10, 362, 200, 44, "ok", [["Ponto dominado"], [`dominados: ${dominados}`, "fx-n ok"]])}
+    ${L(110, 406, 110, 424)}
+    ${caixa(10, 424, 200, 48, "", [["A régua sobe"], ["gramática + vocabulário + uso"]])}
+    ${caixa(232, 420, 120, 56, "lado", [["Também sobem"], ["cards aprendidos"], ["frases sem erro"]])}
+    ${L(232, 448, 212, 448)}
+    ${L(110, 472, 110, 490)}
+    ${losango(526, 90, 36, ["O próximo nível", "passou de 70%?"])}
+    ${L(200, 526, 232, 526)}${R(205, 519, "não")}
+    ${caixa(232, 504, 120, 44, "lado", [["Ainda não"], [prox, "fx-n warn"]])}
+    ${L(110, 562, 110, 582)}${R(118, 576, "sim", "ok")}
+    ${caixa(10, 582, 200, 40, "", [["Teste de nível"], ["confirma, aqui na aba Nível"]])}
+    ${L(110, 622, 110, 640)}
+    ${caixa(10, 640, 200, 44, "ac", [["Nível novo"], ["o ciclo segue no próximo"]])}
+    <path class="fx-l volta" d="M10 662H-6V35H8" marker-end="url(#fx-a)"/>
+  </svg>`;
 }
 
 // ---------- O progresso do outro, só pra ver ----------
@@ -2171,9 +2362,6 @@ function renderOutro(){
 function abrirVoce(){
   preencherStatsSelect();
   renderStats();
-  preencherSelect($("level-deck"), state.currentDeckId);
-  renderRegua();
-  carregarNiveis();
   renderConfig();
 }
 
@@ -2308,6 +2496,8 @@ async function corrigirTeste(){
       if(it.Tipo !== "compreensao" && (t.respostas[i] || "").trim()) anotarProducao("nivel", errs.map(e => e.Ponto));
     });
     publicarJuntos(true);
+    renderNivel();
+    atualizarPilulas();
   }, $("q-next"));
   if(!r) return;
   const box = $("level-result");
@@ -2481,6 +2671,8 @@ ligar("ponto-back", "click", fecharCamada);
 ligar("btn-treinar-ponto", "click", treinarPonto);
 ligar("outro-back", "click", fecharCamada);
 document.querySelectorAll("[data-voce]").forEach(b => b.addEventListener("click", () => irPara("v-you", { camada: true })));
+document.querySelectorAll("[data-nvpill]").forEach(b => b.addEventListener("click", () => irParaAba("v-nivel")));
+$("study-dica").textContent = matchMedia("(pointer: coarse)").matches ? "toque vira · arraste responde" : "espaço vira · 1 a 4 responde";
 
 // Juntos e Você
 ligar("btn-route", "click", gerarRoteiro);
