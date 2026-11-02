@@ -46,14 +46,17 @@
 
   <nav class="tabbar" id="tabbar" aria-label="Navegação">
     <div class="rail-brand">Fluência</div>
+    <button class="tab" data-view="v-decks" aria-label="Baralhos">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M3 7v11M21 7v11"/></svg><span>Baralhos</span>
+    </button>
     <button class="tab active" data-view="v-study" aria-label="Estudar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2.5"/><path d="M4 10h16"/></svg><span>Estudar</span>
     </button>
+    <button class="tab" data-view="v-erros" aria-label="Meus erros">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l9 15.5H3z"/><path d="M12 10v4M12 16.6v.1"/></svg><span>Erros</span>
+    </button>
     <button class="tab" data-view="v-talk" aria-label="Conversar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H10l-4 3v-3H5z"/></svg><span>Conversar</span>
-    </button>
-    <button class="tab" data-view="v-decks" aria-label="Baralhos">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M3 7v11M21 7v11"/></svg><span>Baralhos</span>
     </button>
     <button class="tab" data-view="v-together" aria-label="Juntos">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="3"/><circle cx="16" cy="10" r="2.5"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M14.5 15c2.6-.4 4.6.9 5.5 3.6"/></svg><span>Juntos</span>
@@ -66,7 +69,7 @@
     <section class="view active" id="v-study">
       <header class="bar">
         <button class="chip" id="deck-chip" aria-label="Trocar de baralho"><span id="deck-chip-name">—</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
-        <div class="bar-stats"><span id="stat-today-top">0</span> hoje · <span id="stat-streak-top">0</span> dias</div>
+        <div class="bar-dir"><div class="bar-stats"><span id="stat-today-top">0</span> hoje · <span id="stat-streak-top">0</span> dias</div><button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button></div>
       </header>
 
       <div class="study" id="study">
@@ -113,6 +116,7 @@
     <section class="view" id="v-talk">
       <div class="talk-setup" id="talk-setup">
         <header class="page-head">
+          <button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button>
           <div class="eyebrow">Conversa com correção</div>
           <h1>Conversar</h1>
           <p class="lede">A IA faz o papel de quem você vai encontrar lá fora. Responda falando ou escrevendo. No fim, sai um relatório com os erros e cards novos.</p>
@@ -126,6 +130,7 @@
               <button class="pill" data-v="tecnica" role="radio" aria-checked="false">Entrevista técnica</button>
               <button class="pill" data-v="viagem" role="radio" aria-checked="false">Viagem</button>
               <button class="pill" data-v="livre" role="radio" aria-checked="false">Conversa livre</button>
+              <button class="pill" data-v="falar2" role="radio" aria-checked="false">Falar 2 minutos</button>
             </div>
           </div>
           <label class="field"><span>Vaga ou contexto (opcional)</span>
@@ -160,7 +165,7 @@
           <div class="eyebrow">Seus destinos</div>
           <h1>Baralhos</h1>
         </div>
-        <button class="btn btn-yel btn-sm" id="btn-new-deck">+ Novo</button>
+        <div class="head-acoes"><button class="btn btn-yel btn-sm" id="btn-new-deck">+ Novo</button><button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button></div>
       </header>
       <div class="deck-list" id="deck-list"></div>
     </section>
@@ -216,6 +221,7 @@
     <!-- JUNTOS -->
     <section class="view" id="v-together">
       <header class="page-head">
+        <button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button>
         <div class="eyebrow">Vocês dois</div>
         <h1>Juntos</h1>
       </header>
@@ -230,6 +236,51 @@
       </div>
     </section>
 
+    <!-- MEUS ERROS -->
+    <section class="view" id="v-erros">
+      <header class="page-head">
+        <button class="voce-btn" data-voce aria-label="Você: régua, estatísticas e ajustes">·</button>
+        <div class="eyebrow">Seu mapa</div>
+        <h1>Meus erros</h1>
+        <p class="lede" id="erros-resumo"></p>
+      </header>
+      <div class="seg" id="erros-tabs" role="tablist">
+        <button class="on" data-tab="treinando" role="tab">Treinando <small>0</small></button>
+        <button data-tab="quase" role="tab">Quase lá <small>0</small></button>
+        <button data-tab="dominado" role="tab">Dominados <small>0</small></button>
+      </div>
+      <div class="ponto-lista" id="erros-lista"></div>
+      <button class="btn btn-yel btn-block" id="btn-treinar-erros">Treinar os erros</button>
+    </section>
+
+    <!-- UM PONTO: aula e treino -->
+    <section class="view" id="v-ponto">
+      <header class="bar">
+        <button class="icon-btn" id="ponto-back" aria-label="Voltar aos erros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="bar-title" id="ponto-nome">—</div>
+        <span style="width:44px"></span>
+      </header>
+      <div class="deck-meta" id="ponto-meta"></div>
+      <button class="btn btn-yel btn-block" id="btn-treinar-ponto">Treinar só este</button>
+      <div class="section-title">O que você errou</div>
+      <div class="ponto-erros" id="ponto-erros"></div>
+      <div class="panel aula" id="ponto-aula"></div>
+    </section>
+
+    <!-- O PROGRESSO DO OUTRO, SÓ PRA VER -->
+    <section class="view" id="v-outro">
+      <header class="bar">
+        <button class="icon-btn" id="outro-back" aria-label="Voltar para Juntos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="bar-title" id="outro-nome">—</div>
+        <span style="width:44px"></span>
+      </header>
+      <div class="panel" id="outro-regua"></div>
+      <div class="section-title">Números</div>
+      <div class="stat-grid" id="outro-stats"></div>
+      <div class="section-title">Os erros, por ponto</div>
+      <div class="ponto-lista leitura" id="outro-erros"></div>
+    </section>
+
     <!-- VOCÊ -->
     <section class="view" id="v-you">
       <header class="bar">
@@ -239,7 +290,7 @@
       </header>
       <div class="seg" id="you-tabs" role="tablist">
         <button class="on" data-tab="stats" role="tab">Estatísticas</button>
-        <button data-tab="level" role="tab">Nível</button>
+        <button data-tab="level" role="tab">Régua</button>
         <button data-tab="settings" role="tab">Ajustes</button>
       </div>
 
@@ -263,6 +314,8 @@
       </div>
 
       <div class="tabpane hidden" data-pane="level">
+        <div class="panel" id="regua-box"></div>
+        <div class="section-title">Teste de nível</div>
         <div id="level-start" class="panel">
           <p class="lede">Dez perguntas, uma por tela, corrigidas pela IA. Dá uma estimativa de nível na escala CEFR. Refaça uma vez por mês. Não substitui um teste oficial.</p>
           <label class="field"><span>Baralho (define idioma e objetivo)</span><select id="level-deck"></select></label>
@@ -280,6 +333,7 @@
           <label class="field"><span>Nome (aparece em Juntos)</span><input id="cfg-name" maxlength="40" autocomplete="given-name"></label>
           <label class="field"><span>Seu histórico (usado nas entrevistas)</span><textarea id="cfg-history" rows="3" placeholder="Ex.: 6 anos de Unity e VR, treinamentos em realidade virtual, C#…"></textarea></label>
           <div class="kv"><span>Email</span><b id="settings-email"></b></div>
+          <button class="btn btn-ghost btn-block" id="btn-logout">Sair da conta</button>
         </div>
         <div class="panel">
           <div class="section-title flat">Modos de estudo</div>
@@ -300,7 +354,6 @@
           <div class="section-title flat">Como o próximo card é escolhido</div>
           <p class="hint">O estudo não tem fim nem data marcada. A cada card, o app sorteia, e o peso de cada card cresce quando você ainda não o domina naquele modo e com o tempo desde a última vez, mais devagar para o que você já sabe bem. Os últimos cards ficam de fora por alguns sorteios, e os novos entram aos poucos. Marcar Fácil 5 vezes seguidas no mesmo card deixa a frase mais longa, até o nível 3.</p>
         </div>
-        <button class="btn btn-ghost btn-block" id="btn-logout">Sair da conta</button>
       </div>
     </section>
 

@@ -19,12 +19,14 @@ To test logged-in screens without a real account, use an import map that swaps `
 
 ## Architecture
 
-- `index.html` — markup; views are `<section class="view">` toggled by `irPara()`. Four tabs (Estudar, Conversar, Baralhos, Juntos); `v-deck` and `v-you` (Você: stats, level, settings) are sub-screens opened as layers.
+- `index.html` — markup; views are `<section class="view">` toggled by `irPara()`. Five tabs, in this order (his): Baralhos, Estudar, Erros, Conversar, Juntos. `v-deck`, `v-you` (Você: stats, régua + level test, settings), `v-ponto` (one grammar point: his errors and the lesson) and `v-outro` (the other person's progress, read-only) are sub-screens opened as layers. Every tab header has the round Você button (`[data-voce]`, the initial of the name).
 - `css/styles.css` — all styling; tokens on `:root`. Visual direction "Embarque" (approved 14/10/2026): dark airport board, yellow `#FFC400`, Barlow Condensed for signage, Barlow for text, JetBrains Mono for the flap letters. Mobile first; from 900px the tab bar becomes a left rail.
 - `js/app.js` — UI and state (`state` object), all screens.
 - `js/firebase.js` — Firebase via REST, no SDK: login, **token refresh** (Secure Token API) with the session kept in `localStorage`, Realtime Database helpers. `meu(path)` = `/fluencia/users/{uid}` + path.
 - `js/ia-pedidos.js` — every Claude request (system, messages, JSON schema, effort). Pure, no DOM: can be imported from Node to test prompts against the real API. `executar()` calls `client.beta.messages.create` with structured outputs and the server-side fallback.
 - `js/ia.js` — browser Claude client (`@anthropic-ai/sdk` from jsDelivr, pinned version, `dangerouslyAllowBrowser`). Key read from `/fluencia/claudeKey`.
+- `js/catalogo.js` — the **fixed catalog of grammar points** (A1–C1 plus `X-estrutura-pt`, "sentence built from Portuguese"), the vocabulary goal per level, and the ES-16 seed (his placement test of 01/11/2026). Every error, from any screen, is classified by the AI into one id of this list (enum in the schema), so errors add up. English decks only (`P.classifica(deck)`). Ids use `-`, never `.` (Firebase keys).
+- `js/erros.js` — pure: point state (presumido, nao-medido, treinando, quase, dominado), error and training updates, the point draw for exercises, and the **régua** (per level: 50% grammar, 25% vocabulary, 25% use; a level is yours from 70% with all below also ≥ 70%). Dominado = m ≥ 0.7, correct on 3 different days, no error in the last 7.
 - `js/selecao.js` — card choice and mastery. Per card and mode: `m` (moving average of grades), `n`, `last`, `ok`. Weight = `0.2 + 2.5·(1−m) + 3·forgetting`, with a cooldown on recent cards and a brake on new cards.
 - `js/voz.js` — browser speech: TTS (`speechSynthesis`), recognition (`SpeechRecognition`), own-voice recording (`MediaRecorder`), local word-level comparison.
 - `sw.js` + `manifest.webmanifest` — installable PWA, network-first cache of the app shell. Bump `CACHE` when adding files.
@@ -35,9 +37,18 @@ Everything of Fluência is under `/fluencia`. **Never touch other top-level node
 
 - `/fluencia/claudeKey` — Claude API key (read: allowed emails only; write: console/CLI only).
 - `/fluencia/users/{uid}/` — `Profile` (Nome, Historico, Prefs, UltimoNivel), `Decks/{id}` (Name, Language, Nivel, Objetivo, Contexto, Trilha[], UnidadeAtual, Cards), `Dias/{AAAA-MM-DD}` ({r, a, f, rm, ra}), `Conversas/{id}`, `Niveis/{id}`.
-- `/fluencia/juntos/{uid}` — summary for the "Juntos" screen (name, streak, today, last 7 days, level, weakest targets, today's car script).
+- `/fluencia/users/{uid}/` (ES-22) — `Pontos/{id}` ({m, n, ok, last, dias, erros, ult}), `Erros/{id}` ({p, o, c, e, f: fonte, d}), `Producao/{id}` ({d, f, p: {pontoId: 1}}: one sentence he produced, the base of "use"; keys `p` + base36 time, queried from the last 40 days), `Exercicios/{ponto}` ({itens, i}), `Aulas/{ponto}`, `Profile.Base` (starting level of the régua) and `Profile.SementeES16`, `Dias/{d}.w` (Escrever done 1 / skipped 2).
+- `/fluencia/juntos/{uid}` — summary for the "Juntos" screen (name, streak, today, last 7 days, level, weakest targets, today's car script) and, since ES-22, `Regua`, `Pontos` (errors per point, last example), `Fracos3` and `Stats`. **Each user can only read their own `users/{uid}`**, so everything the other person sees goes through here.
 
 Rules: only the two emails listed in the rules (Guilherme and Julia) can read or write `/fluencia`. The rules of the whole database are deployed from outside this repo (they include other apps' rules). To change the Fluência block, fetch the live rules first (`MSYS_NO_PATHCONV=1 firebase database:get "/.settings/rules"` in Git Bash), edit only `fluencia`, and deploy them with `firebase deploy --only database` from a scratch folder.
+
+## Fluência 3 (ES-22, approved 01/11/2026)
+
+- **Estudar has three entries** (the chip): Tudo (all decks + one point exercise every 3 cards + the daily "Escrever 3 frases"), one deck, or Meus erros (only exercises). "Treinar só este" in a lesson sets `state.pontoTreino`. `state.atual` is `{tipo: "card"|"ex"|"escrever", …}`.
+- Exercises come in batches of 10 per point from the AI (`pedidoExercicios`), saved and consumed in order; in Tudo, while a batch is being generated (one point at a time), a card is shown instead.
+- Errors enter from Produzir, each Conversa turn, the Nível test, Escrever and "Falar 2 minutos" (a Conversar scenario, continuous speech recognition).
+- Native `<select>`s stay hidden as the value source; `enfeitar(sel)` draws pills (≤ 4 options) or an inline list. Checkboxes are drawn as switches by CSS.
+- The Córtex (`D:\Cortex-Pessoal-front`) opens https://fluencia.web.app/ in its sheet (Acervo group); the iframe allows the microphone.
 
 ## UI conventions to preserve
 

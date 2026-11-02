@@ -3,10 +3,28 @@ import { pedir } from "./ia.js";
 import * as P from "./ia-pedidos.js";
 import { MODOS, sortear, registrarResposta, estadoModo, dominio, lacuna, hojeLocal, sequencia } from "./selecao.js";
 import * as voz from "./voz.js";
+import { PONTOS, PONTO, NIVEIS_REGUA, SEMENTE_ES16, nomePonto, nivelPonto, ordemNivel } from "./catalogo.js";
+import * as E from "./erros.js";
 
 const { IDIOMAS, NIVEIS, MAX_CARD_LEVEL, idiomaLabel } = P;
 const EVOLVE_STREAK_THRESHOLD = 5;
-const NOMES_CENARIO = { rh: "Entrevista de RH", tecnica: "Entrevista técnica", viagem: "Viagem", livre: "Conversa livre" };
+const NOMES_CENARIO = { rh: "Entrevista de RH", tecnica: "Entrevista técnica", viagem: "Viagem", livre: "Conversa livre", falar2: "Falar 2 minutos" };
+const EMAIL_SEMENTE = "guittk@hotmail.com"; // o teste da ES-16 é dele
+const FONTE_NOME = { produzir: "Produzir", conversa: "Conversa", nivel: "Teste de Nível", es16: "Nivelamento de 01/11", escrever: "Escrever", falar: "Falar 2 minutos" };
+const TEMAS_FALA = [
+  "Fale sobre o seu trabalho: o que você faz e com quem.",
+  "Conte um problema que você resolveu no trabalho e como.",
+  "Descreva o projeto de que você mais se orgulha.",
+  "Fale sobre o seu dia de ontem, do começo ao fim.",
+  "Explique por que você quer trabalhar no exterior.",
+  "Conte como é a sua rotina num dia de semana.",
+  "Fale de uma ferramenta que você usa todo dia e por quê.",
+  "Descreva a sua cidade para alguém que nunca foi lá.",
+  "Conte o que você faria se ganhasse um ano de férias.",
+  "Fale sobre um erro que você cometeu e o que aprendeu.",
+  "Explique como você aprende uma tecnologia nova.",
+  "Fale sobre os seus planos para os próximos dois anos.",
+];
 const reduzMovimento = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // =========================================================
@@ -20,11 +38,17 @@ const state = {
   gravacaoUrl: null, ultimaFala: "",
   conversa: null, cenario: "rh",
   teste: null, juntos: {}, roteiro: null,
+  // Mapa de erros (ES-22)
+  pontos: {}, erros: {}, producao: {}, exercicios: {}, aulas: {},
+  entrada: "tudo", pontoTreino: null, desdeExercicio: 0, gerando: {},
+  pontoId: null, errosAba: "treinando", outroUid: null,
 };
 const prefs = () => Object.assign(
   { modos: ["rec", "prod", "ouv", "comp"], voz: "", lento: 0.7, autoplay: false, vibrar: true },
   state.perfil.Prefs || {}
 );
+// O nível de partida da régua: o do nivelamento, ou o do último teste de Nível.
+const nivelBase = () => (state.perfil.Base && state.perfil.Base.nivel) || (NIVEIS_REGUA.includes(state.perfil.UltimoNivel) ? state.perfil.UltimoNivel : null);
 
 // =========================================================
 // DOM
@@ -137,6 +161,57 @@ const fecharFolha = () => { if(!$("sheet-root").hidden) fecharCamada(); };
   addEventListener("keydown", e => { if(e.key === "Escape" && !$("sheet-root").hidden) fecharFolha(); });
 })();
 
+// ---------- Listas de escolha no desenho do app ----------
+// O <select> fica escondido e continua sendo a fonte do valor e do "change".
+// Até 4 opções viram botões lado a lado; mais que isso, uma lista logo abaixo
+// (dentro da própria tela, porque a folha de baixo pode já estar aberta).
+function enfeitar(sel){
+  if(!sel) return;
+  let caixa = sel.nextElementSibling;
+  if(!caixa || !caixa.classList.contains("escolha")){
+    caixa = document.createElement("div");
+    sel.after(caixa);
+    sel.classList.add("sel-nativo");
+    sel.tabIndex = -1;
+    sel.setAttribute("aria-hidden", "true");
+    sel.addEventListener("change", () => desenharEscolha(sel, sel.nextElementSibling));
+  }
+  desenharEscolha(sel, caixa);
+}
+function desenharEscolha(sel, caixa){
+  const ops = [...sel.options];
+  const rotulo = sel.closest(".field")?.querySelector("span")?.textContent || sel.getAttribute("aria-label") || "";
+  const escolher = v => { sel.value = v; sel.dispatchEvent(new Event("change", { bubbles: true })); };
+  const off = sel.disabled ? "disabled" : "";
+  if(ops.length <= 4){
+    caixa.className = "escolha chips";
+    caixa.setAttribute("role", "radiogroup");
+    caixa.setAttribute("aria-label", rotulo);
+    caixa.innerHTML = ops.map(o => `<button type="button" class="pill ${o.value === sel.value ? "on" : ""}" role="radio" aria-checked="${o.value === sel.value}" data-v="${esc(o.value)}" ${off}>${esc(o.textContent)}</button>`).join("");
+    caixa.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", e => { e.preventDefault(); escolher(b.dataset.v); }));
+    return;
+  }
+  const atual = ops.find(o => o.value === sel.value) || ops[0];
+  caixa.className = "escolha lista";
+  caixa.removeAttribute("role");
+  caixa.innerHTML = `<button type="button" class="escolha-btn" aria-expanded="false" aria-label="${esc(rotulo)}" ${off}><span>${esc(atual ? atual.textContent : "—")}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg></button>
+    <div class="escolha-ops" role="listbox" hidden>${ops.map(o => `<button type="button" role="option" aria-selected="${o.value === sel.value}" class="${o.value === sel.value ? "on" : ""}" data-v="${esc(o.value)}">${esc(o.textContent)}</button>`).join("")}</div>`;
+  const btn = caixa.querySelector(".escolha-btn"), lista = caixa.querySelector(".escolha-ops");
+  btn.addEventListener("click", e => {
+    e.preventDefault();
+    const abrir = lista.hidden;
+    fecharEscolhas();
+    lista.hidden = !abrir;
+    btn.setAttribute("aria-expanded", String(abrir));
+    if(abrir) lista.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+  });
+  lista.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", e => { e.preventDefault(); escolher(b.dataset.v); }));
+}
+function fecharEscolhas(){
+  document.querySelectorAll(".escolha-ops").forEach(l => { l.hidden = true; l.previousElementSibling?.setAttribute("aria-expanded", "false"); });
+}
+document.addEventListener("click", e => { if(!e.target.closest(".escolha")) fecharEscolhas(); });
+
 function confirmar({ titulo, texto, botao = "Confirmar", perigo = true }){
   return new Promise(resolve => {
     let respondido = false;
@@ -225,15 +300,27 @@ const alvosExistentes = deck => Object.values(deck.Cards).map(c => c.Word);
 
 async function carregarTudo(){
   const inicio = new Date(); inicio.setDate(inicio.getDate() - 70);
-  const [perfil, decks, dias] = await Promise.all([
+  const desde = "p" + (Date.now() - 40 * 864e5).toString(36);
+  const [perfil, decks, dias, pontos, erros, producao, exercicios] = await Promise.all([
     fb.dbGet(fb.meu("/Profile")),
     fb.dbGet(fb.meu("/Decks")),
     fb.dbGet(fb.meu("/Dias"), { orderBy: '"$key"', startAt: `"${hojeLocal(inicio)}"` }),
+    fb.dbGet(fb.meu("/Pontos")).catch(() => null),
+    fb.dbGet(fb.meu("/Erros")).catch(() => null),
+    fb.dbGet(fb.meu("/Producao"), { orderBy: '"$key"', startAt: `"${desde}"` }).catch(() => null),
+    fb.dbGet(fb.meu("/Exercicios")).catch(() => null),
   ]);
   state.perfil = perfil || {};
   state.decks = decks || {};
   Object.values(state.decks).forEach(d => { d.Cards = d.Cards || {}; d.Trilha = d.Trilha || []; });
   state.dias = dias || {};
+  state.pontos = pontos || {};
+  state.erros = erros || {};
+  state.producao = producao || {};
+  state.exercicios = exercicios || {};
+  Object.values(state.exercicios).forEach(x => { x.itens = x.itens || []; x.i = x.i || 0; });
+  try{ state.entrada = localStorage.getItem("fluencia:entrada") || "tudo"; }catch(e){}
+  if(!["tudo", "deck", "erros"].includes(state.entrada)) state.entrada = "tudo";
   const agora = new Date().toISOString();
   const patch = { Email: fb.sessao.email, LastLogin: agora };
   if(!state.perfil.CreatedAt) patch.CreatedAt = agora;
@@ -248,7 +335,11 @@ function salvarPrefs(mudanca){
 function salvarPerfilCampo(campo, valor){
   state.perfil[campo] = valor;
   fb.dbPatch(fb.meu("/Profile"), { [campo]: valor }).catch(err => toast(err.message));
-  if(campo === "Nome") publicarJuntos();
+  if(campo === "Nome"){ publicarJuntos(); atualizarVoce(); }
+}
+function atualizarVoce(){
+  const ini = ((state.perfil.Nome || fb.sessao.email || "?").trim()[0] || "?").toUpperCase();
+  document.querySelectorAll("[data-voce]").forEach(b => { b.textContent = ini; });
 }
 const hojeR = () => (state.dias[hojeLocal()] && state.dias[hojeLocal()].r) || 0;
 function somarDia(campos){
@@ -257,6 +348,79 @@ function somarDia(campos){
   for(const k in campos) d[k] += campos[k];
   state.dias[hoje] = d;
   fb.dbPut(fb.meu(`/Dias/${hoje}`), d).catch(() => {});
+}
+
+// ---------- Mapa de erros ----------
+const pontoValido = id => !!(id && PONTO[id]);
+function salvarPonto(id){
+  fb.dbPut(fb.meu(`/Pontos/${id}`), state.pontos[id]).catch(err => toast(err.message));
+}
+// Guarda os erros (de qualquer tela) e soma cada um no ponto dele.
+// lista: [{ Ponto, Original, Certo, Explicacao }]
+function anotarErros(lista, fonte){
+  const base = nivelBase();
+  const validos = (lista || []).filter(e => pontoValido(e.Ponto) && (e.Original || e.Certo));
+  if(!validos.length) return 0;
+  const patch = {};
+  for(const e of validos){
+    const presumido = E.estadoPonto(state.pontos[e.Ponto], e.Ponto, base) === "presumido";
+    state.pontos[e.Ponto] = E.registrarErroPonto(state.pontos[e.Ponto], { presumido });
+    salvarPonto(e.Ponto);
+    const k = novoId("e");
+    state.erros[k] = { p: e.Ponto, o: (e.Original || "").slice(0, 300), c: (e.Certo || "").slice(0, 300), e: (e.Explicacao || "").slice(0, 400), f: fonte, d: new Date().toISOString() };
+    patch[k] = state.erros[k];
+  }
+  fb.dbPatch(fb.meu("/Erros"), patch).catch(err => toast(err.message));
+  publicarJuntos();
+  return validos.length;
+}
+// Uma frase produzida por ele, com os pontos em que errou: é a base do "uso" na régua.
+function anotarProducao(fonte, pontos = []){
+  const k = novoId("p");
+  const p = {};
+  pontos.filter(pontoValido).forEach(id => { p[id] = 1; });
+  state.producao[k] = { d: hojeLocal(), f: fonte, ...(Object.keys(p).length ? { p } : {}) };
+  fb.dbPut(fb.meu(`/Producao/${k}`), state.producao[k]).catch(() => {});
+}
+const aprendidosIngles = () => Object.values(state.decks).filter(d => P.classifica(d))
+  .reduce((a, d) => a + Object.values(d.Cards).filter(c => c.LearnedAt).length, 0);
+const minhaRegua = () => E.regua({ regs: state.pontos, base: nivelBase(), aprendidos: aprendidosIngles(), producao: Object.values(state.producao) });
+const errosDoPonto = id => Object.entries(state.erros).filter(([, e]) => e.p === id).sort((a, b) => (b[1].d || "").localeCompare(a[1].d || ""));
+const objetivoIngles = () => (Object.values(state.decks).find(d => P.classifica(d)) || {}).Objetivo || "";
+
+// O nivelamento da ES-16 entra uma vez, na conta dele: o mapa já nasce com os erros do teste.
+async function aplicarSemente(){
+  if(fb.sessao.email !== EMAIL_SEMENTE || state.perfil.SementeES16) return;
+  const S = SEMENTE_ES16;
+  const base = S.nivel;
+  const pontos = {}, erros = {}, producao = {};
+  const quando = new Date(S.data + "T12:00:00").toISOString();
+  const anota = (id, o, c, e, f) => {
+    const presumido = E.estadoPonto(pontos[id], id, base) === "presumido";
+    pontos[id] = E.registrarErroPonto(pontos[id], { presumido });
+    erros[novoId("e")] = { p: id, o, c, e, f, d: quando };
+  };
+  for(const q of S.questoes){
+    if(q.ok) pontos[q.p] = E.registrarAcerto(pontos[q.p], S.data);
+    else anota(q.p, q.o, q.c, q.e, "es16");
+  }
+  for(const r of S.redacoes) anota(r.p, r.o, r.c, r.e, "es16");
+  // As 8 frases das duas redações, com os pontos em que cada uma errou.
+  [[], [], ["A1-pronomes"], ["A1-preposicoes", "X-estrutura-pt", "A1-artigos"],
+   ["A1-pronomes"], ["A2-sujeito-obrigatorio", "A1-terceira-pessoa"],
+   ["A2-conectores", "X-estrutura-pt", "B1-falsos-cognatos"], ["A2-verbo-to", "B1-incontaveis", "B1-falsos-cognatos"]]
+    .forEach(ps => { producao[novoId("p")] = { d: S.data, f: "es16", ...(ps.length ? { p: Object.fromEntries(ps.map(id => [id, 1])) } : {}) }; });
+  const marca = { Base: { nivel: base, fonte: "ES-16", data: S.data }, SementeES16: new Date().toISOString() };
+  await Promise.all([
+    fb.dbPatch(fb.meu("/Pontos"), pontos),
+    fb.dbPatch(fb.meu("/Erros"), erros),
+    fb.dbPatch(fb.meu("/Producao"), producao),
+    fb.dbPatch(fb.meu("/Profile"), marca),
+  ]);
+  Object.assign(state.pontos, pontos);
+  Object.assign(state.erros, erros);
+  Object.assign(state.producao, producao);
+  Object.assign(state.perfil, marca);
 }
 
 // ---------- Juntos: o resumo público de cada um ----------
@@ -274,12 +438,30 @@ function publicarJuntos(imediato = false){
       .filter(c => !c.Suspended && estadoModo(c, "rec").n > 0)
       .sort((a, b) => (dominio(a) ?? 0) - (dominio(b) ?? 0))
       .slice(0, 10).map(c => c.Word) : [];
+    // Régua, erros e números: é o que o outro vê, só pra ver. Os dados de cada
+    // um são privados no banco; o Juntos é o único lugar que os dois leem.
+    const base = nivelBase();
+    const r = minhaRegua();
+    const comErro = E.pontosComErro(state.pontos, base);
+    const resumoPontos = {};
+    comErro.slice(0, 40).forEach(({ id, reg, estado }) => {
+      const ult = errosDoPonto(id)[0];
+      resumoPontos[id] = { e: estado, x: reg.erros, ...(ult ? { o: ult[1].o, c: ult[1].c } : {}) };
+    });
+    const todos = Object.values(state.decks).flatMap(d => Object.values(d.Cards));
+    const lim = new Date(); lim.setDate(lim.getDate() - 29);
+    const u30 = Object.entries(state.dias).filter(([k]) => k >= hojeLocal(lim)).map(([, v]) => v);
+    const s30 = k => u30.reduce((a, d) => a + (d[k] || 0), 0);
     fb.dbPatch(`${fb.RAIZ}/juntos/${fb.sessao.uid}`, {
+      Regua: { atual: r.atual || "", prox: r.prox || "", pct: Math.round(r.pctProx * 100), niveis: Object.fromEntries(r.niveis.map(n => [n.n, Math.round(n.pct * 100)])), base: base || "" },
+      Pontos: resumoPontos,
+      Fracos3: comErro.filter(x => x.estado !== "dominado").slice(0, 3).map(x => x.id),
+      Stats: { precisao: s30("r") ? Math.round(s30("a") / s30("r") * 100) : -1, aprendidos: todos.filter(c => c.LearnedAt).length, total: todos.length, faladas: s30("f"), revisoes: s30("r") },
       Nome: state.perfil.Nome || "",
       Sequencia: sequencia(state.dias),
       Hoje: { data: hojeLocal(), r: hojeR() },
       Dias7: dias7,
-      Nivel: state.perfil.UltimoNivel || (deck && deck.Nivel) || "",
+      Nivel: r.atual || state.perfil.UltimoNivel || (deck && deck.Nivel) || "",
       Objetivo: (deck && deck.Objetivo) || "",
       Idioma: (deck && deck.Language) || "en",
       Fracas: fracas,
@@ -292,8 +474,8 @@ function publicarJuntos(imediato = false){
 // =========================================================
 // NAVEGAÇÃO
 // =========================================================
-const ABA_DE = { "v-deck": "v-decks", "v-you": "v-together" };
-const ORDEM = ["v-study", "v-talk", "v-decks", "v-together"];
+const ABA_DE = { "v-deck": "v-decks", "v-you": "v-together", "v-ponto": "v-erros", "v-outro": "v-together" };
+const ORDEM = ["v-decks", "v-study", "v-erros", "v-talk", "v-together"];
 let viewAtual = "v-study";
 
 function irPara(view, { camada = false } = {}){
@@ -316,29 +498,57 @@ function irPara(view, { camada = false } = {}){
   if(para === "v-talk") abrirConversar();
   if(para === "v-together") abrirJuntos();
   if(para === "v-you") abrirVoce();
+  if(para === "v-erros") renderErros();
+  if(para === "v-ponto") renderPonto();
+  if(para === "v-outro") renderOutro();
   if(camada) abrirCamada(() => irPara(de));
 }
 
-function atualizarTopo(){
+function nomeEntrada(){
+  if(state.pontoTreino) return `Treino · ${nomePonto(state.pontoTreino)}`;
+  if(state.entrada === "tudo") return "Tudo";
+  if(state.entrada === "erros") return "Meus erros";
   const deck = state.decks[state.currentDeckId];
-  $("deck-chip-name").textContent = deck ? deck.Name : "Sem baralho";
+  return deck ? deck.Name : "Sem baralho";
+}
+function atualizarTopo(){
+  $("deck-chip-name").textContent = nomeEntrada();
   $("stat-today-top").textContent = hojeR();
   $("stat-streak-top").textContent = sequencia(state.dias);
 }
 
 function lembrarDeck(id){ try{ localStorage.setItem("fluencia:lastDeck", id); }catch(e){} }
+function lembrarEntrada(v){ state.entrada = v; try{ localStorage.setItem("fluencia:entrada", v); }catch(e){} }
 
+// O que entra no sorteio: Tudo (todos os baralhos e os exercícios dos erros),
+// um baralho só, ou só os erros. Ideia dele, aprovada em 01/11/2026.
 function escolherDeck(){
   const ids = Object.keys(state.decks);
+  const emTreino = E.pontosComErro(state.pontos, nivelBase()).filter(x => x.estado !== "dominado").length;
+  const on = v => !state.pontoTreino && state.entrada === v;
   const c = abrirFolha(`
-    <h2 class="sheet-title">Estudar qual baralho?</h2>
-    <div class="menu">${ids.map(id => `<button data-id="${id}" class="${id === state.currentDeckId ? "on" : ""}">${esc(state.decks[id].Name)} <span class="tag">${esc(idiomaLabel(state.decks[id].Language))}</span></button>`).join("")}
+    <h2 class="sheet-title">Estudar o quê?</h2>
+    <div class="menu">
+      <button data-e="tudo" class="${on("tudo") ? "on" : ""}">Tudo <span class="tag yel">cards e erros</span></button>
+      <button data-e="erros" class="${on("erros") ? "on" : ""}">Meus erros <span class="tag">${emTreino} ${emTreino === 1 ? "ponto" : "pontos"}</span></button>
+    </div>
+    <div class="section-title flat">Um baralho só</div>
+    <div class="menu">${ids.map(id => `<button data-id="${id}" class="${on("deck") && id === state.currentDeckId ? "on" : ""}">${esc(state.decks[id].Name)} <span class="tag">${esc(idiomaLabel(state.decks[id].Language))}</span></button>`).join("")}
     <button data-id="">Gerenciar baralhos</button></div>`);
+  c.querySelectorAll("[data-e]").forEach(b => b.addEventListener("click", () => {
+    fecharFolha();
+    state.pontoTreino = null;
+    lembrarEntrada(b.dataset.e);
+    atualizarTopo();
+    proximoCard();
+  }));
   c.querySelectorAll("[data-id]").forEach(b => b.addEventListener("click", () => {
     fecharFolha();
     if(!b.dataset.id){ setTimeout(() => irPara("v-decks"), 50); return; }
+    state.pontoTreino = null;
     state.currentDeckId = b.dataset.id;
     lembrarDeck(b.dataset.id);
+    lembrarEntrada("deck");
     atualizarTopo();
     proximoCard();
   }));
@@ -347,94 +557,238 @@ function escolherDeck(){
 // =========================================================
 // ESTUDAR
 // =========================================================
+// O que está na tela: { tipo: "card", deckId, key, modo }, um exercício de
+// ponto { tipo: "ex", ponto, item } ou o pedido de escrever { tipo: "escrever" }.
 function modosAtivos(){
   const m = prefs().modos.filter(k => MODOS[k]);
   return m.length ? m : ["rec"];
 }
+const deckDoAtual = () => state.atual && state.atual.deckId ? state.decks[state.atual.deckId] : null;
 const cardAtual = () => {
-  const deck = state.decks[state.currentDeckId];
-  return deck && state.atual ? deck.Cards[state.atual.key] : null;
+  const deck = deckDoAtual();
+  return deck && state.atual.tipo === "card" ? deck.Cards[state.atual.key] : null;
 };
+const exAtual = () => state.atual && state.atual.tipo === "ex" ? state.atual : null;
+const temItem = () => !!(cardAtual() || exAtual());
+const temIngles = () => Object.values(state.decks).some(d => P.classifica(d)) || Object.keys(state.pontos).length > 0;
+const cardsAtivos = deck => deck ? Object.values(deck.Cards).filter(c => !c.Suspended).length : 0;
+// A frase certa inteira de um exercício (no Completar, a lacuna preenchida).
+const respostaCompleta = it => it.Tipo === "completar" ? it.Frase.replace(/_{2,}/, it.Resposta) : it.Resposta;
 
-function proximoCard(animar = true){
-  if(Object.keys(state.decks).length && !state.decks[state.currentDeckId]) state.currentDeckId = Object.keys(state.decks)[0];
-  const deck = state.decks[state.currentDeckId];
-  const ativos = deck ? Object.values(deck.Cards).filter(c => !c.Suspended).length : 0;
-  const vazio = !ativos;
-  ["ticket-stage", "tools"].forEach(id => $(id).classList.toggle("hidden", vazio));
-  $("study-empty").classList.toggle("hidden", !vazio);
-  $("gradebar").classList.toggle("hidden", vazio);
-  atualizarTopo();
-  if(vazio){
-    $("type-row").classList.add("hidden");
-    $("feedback").classList.add("hidden");
-    const semDeck = !deck;
-    $("study-empty-title").textContent = semDeck ? "Nenhum baralho ainda" : "Baralho sem cards";
-    $("study-empty-text").textContent = semDeck
-      ? "Crie um baralho com o seu objetivo, e a IA monta a trilha e os cards."
-      : "Gere os cards da primeira unidade da trilha para começar.";
-    $("btn-goto-decks").textContent = semDeck ? "Criar meu primeiro baralho" : "Abrir o baralho";
-    return;
+function sortearCard(){
+  if(state.entrada === "deck"){
+    const deck = state.decks[state.currentDeckId];
+    if(!cardsAtivos(deck)) return null;
+    const s = sortear(state.currentDeckId, deck.Cards, modosAtivos(), { temAudio: voz.temFala });
+    return s && { tipo: "card", deckId: state.currentDeckId, key: s.key, modo: s.modo };
   }
-  state.atual = sortear(state.currentDeckId, deck.Cards, modosAtivos(), { temAudio: voz.temFala });
+  // Tudo: um sorteio só entre os cards de todos os baralhos.
+  const todos = {};
+  for(const [id, d] of Object.entries(state.decks)) for(const [k, c] of Object.entries(d.Cards)) todos[`${id}~${k}`] = c;
+  if(!Object.values(todos).some(c => !c.Suspended)) return null;
+  const s = sortear("tudo", todos, modosAtivos(), { temAudio: voz.temFala });
+  if(!s) return null;
+  const [deckId, key] = s.key.split("~");
+  return { tipo: "card", deckId, key, modo: s.modo };
+}
+
+// O Escrever 3 frases entra no Tudo uma vez por dia, depois de alguns cards. Dá pra pular.
+function escreverDevido(){
+  const d = state.dias[hojeLocal()];
+  return temIngles() && hojeR() >= 6 && !(d && d.w);
+}
+function marcarEscrita(v){
+  const hoje = hojeLocal();
+  state.dias[hoje] = Object.assign({ r: 0, a: 0, f: 0, rm: 0, ra: 0 }, state.dias[hoje], { w: v });
+  fb.dbPatch(fb.meu(`/Dias/${hoje}`), { w: v }).catch(() => {});
+}
+
+function itemPronto(id){
+  const ex = state.exercicios[id];
+  return ex && ex.itens && ex.i < ex.itens.length ? ex.itens[ex.i] : null;
+}
+async function gerarExercicios(id){
+  if(state.gerando[id]) return state.gerando[id];
+  state.gerando[id] = (async () => {
+    const r = await pedir(P.pedidoExercicios(id, errosDoPonto(id).map(([, e]) => e), objetivoIngles()));
+    state.exercicios[id] = { itens: r.Itens, i: 0, criado: new Date().toISOString() };
+    await fb.dbPut(fb.meu(`/Exercicios/${id}`), state.exercicios[id]);
+  })().finally(() => { delete state.gerando[id]; });
+  return state.gerando[id];
+}
+
+let sorteioN = 0;
+async function proximoCard(animar = true){
+  const n = ++sorteioN;
+  if(Object.keys(state.decks).length && !state.decks[state.currentDeckId]) state.currentDeckId = Object.keys(state.decks)[0];
+  if(state.entrada === "deck" && !state.decks[state.currentDeckId]) lembrarEntrada("tudo");
+  atualizarTopo();
+  const base = nivelBase();
+  const soErros = !!state.pontoTreino || state.entrada === "erros";
+  let prox = null;
+  if(soErros){
+    const id = E.sortearPonto(state.pontos, base, { soErros: true, so: state.pontoTreino });
+    if(id) prox = { tipo: "ex", ponto: id };
+  }else{
+    if(state.entrada === "tudo" && escreverDevido()) prox = { tipo: "escrever" };
+    else if(state.entrada === "tudo" && temIngles() && state.desdeExercicio >= E.CARDS_POR_EXERCICIO){
+      const id = E.sortearPonto(state.pontos, base);
+      if(id) prox = { tipo: "ex", ponto: id };
+    }
+    if(!prox) prox = sortearCard();
+    if(!prox && state.entrada === "tudo" && temIngles()){
+      const id = E.sortearPonto(state.pontos, base);
+      if(id) prox = { tipo: "ex", ponto: id };
+    }
+  }
+  if(prox && prox.tipo === "ex"){
+    let item = itemPronto(prox.ponto);
+    if(!item && soErros){
+      mostrarVazio("preparando", prox.ponto);
+      try{ await gerarExercicios(prox.ponto); }catch(err){ toast(err.message); }
+      if(n !== sorteioN) return;
+      item = itemPronto(prox.ponto);
+    }else if(!item){
+      // No Tudo, enquanto a IA prepara os exercícios do ponto, segue com um card.
+      // Um ponto por vez, pra não pedir lotes que ainda vão demorar a ser usados.
+      if(!Object.keys(state.gerando).length) gerarExercicios(prox.ponto).catch(() => {});
+      prox = sortearCard();
+    }
+    if(prox && prox.tipo === "ex"){ if(item) prox.item = item; else prox = null; }
+  }
+  if(!prox){ mostrarVazio(soErros ? "erros" : "cards"); return; }
+  ["ticket-stage", "tools"].forEach(id => $(id).classList.remove("hidden"));
+  $("study-empty").classList.add("hidden");
+  $("gradebar").classList.remove("hidden");
+  state.atual = prox;
   state.virado = false;
   state.visto = false;
   limparFeedback();
   mostrarFrente(animar);
 }
 
+function mostrarVazio(tipo, ponto){
+  state.atual = null;
+  ["ticket-stage", "tools"].forEach(id => $(id).classList.add("hidden"));
+  $("study-empty").classList.remove("hidden");
+  $("gradebar").classList.add("hidden");
+  $("type-row").classList.add("hidden");
+  $("feedback").classList.add("hidden");
+  const botao = $("btn-goto-decks");
+  botao.classList.remove("hidden");
+  botao.dataset.acao = "";
+  if(tipo === "preparando"){
+    $("study-empty-title").textContent = "Preparando o treino";
+    $("study-empty-text").textContent = `A IA está escrevendo os exercícios de ${nomePonto(ponto)}. Leva alguns segundos, uma vez por ponto.`;
+    botao.classList.add("hidden");
+  }else if(tipo === "erros"){
+    $("study-empty-title").textContent = "Nenhum erro em treino";
+    $("study-empty-text").textContent = "Os erros que aparecerem no Produzir, na Conversa, no Escrever e no teste de Nível entram aqui, com aula e exercícios.";
+    botao.textContent = "Estudar tudo";
+    botao.dataset.acao = "tudo";
+  }else{
+    const semDeck = !Object.keys(state.decks).length;
+    $("study-empty-title").textContent = semDeck ? "Nenhum baralho ainda" : "Baralho sem cards";
+    $("study-empty-text").textContent = semDeck
+      ? "Crie um baralho com o seu objetivo, e a IA monta a trilha e os cards."
+      : "Gere os cards da primeira unidade da trilha para começar.";
+    botao.textContent = semDeck ? "Criar meu primeiro baralho" : "Abrir o baralho";
+  }
+}
+
 function mostrarFrente(animar){
-  const deck = state.decks[state.currentDeckId];
-  const card = cardAtual();
-  if(!card) return;
-  const modo = state.atual.modo;
+  const a = state.atual;
+  if(!a) return;
   const ticket = $("ticket");
   // Desvira sem animar: o card novo entra já de frente.
   ticket.classList.add("sem-transicao");
   ticket.classList.remove("flipped", "ok", "erro");
   void ticket.offsetWidth;
   ticket.classList.remove("sem-transicao");
+  ticket.classList.toggle("treino", a.tipo !== "card");
+  // O pedido de escrever não vira nem leva nota: some a barra de notas e o áudio.
+  $("tools").classList.toggle("hidden", a.tipo === "escrever");
+  $("gradebar").classList.toggle("hidden", a.tipo === "escrever");
+  document.querySelector(".face.front .tk-tap").textContent = a.tipo === "escrever" ? "" : "toque para virar";
   mostrarDica(0);
   setNotas(false);
-
-  const unidade = deck.Trilha && card.Unit != null ? deck.Trilha[card.Unit] : null;
-  $("tk-mode").textContent = MODOS[modo].nome;
-  $("tk-unit").textContent = unidade ? unidade.Titulo : (card.Kind || "palavra");
-  $("tk-level").textContent = `frase ${card.Level || 1}/${MAX_CARD_LEVEL}`;
-
   const corpo = $("front-body");
   corpo.innerHTML = "";
   const rotulo = txt => { const l = document.createElement("div"); l.className = "label"; l.textContent = txt; corpo.appendChild(l); };
-  if(modo === "rec"){
-    rotulo("O que quer dizer?");
-    const f = document.createElement("div"); corpo.appendChild(f);
-    painel(f, card.Phrase, card.Word, animar);
-  }else if(modo === "prod"){
-    rotulo(`Diga em ${idiomaLabel(deck.Language).toLowerCase()}`);
-    corpo.insertAdjacentHTML("beforeend", `<div class="pt-big">${esc(card.Translation)}</div>` +
-      (card.Kind === "palavra" ? "" : '<div class="pt small">use uma expressão</div>'));
-  }else if(modo === "ouv"){
-    rotulo("Ouça e entenda");
-    const b = document.createElement("button");
-    b.className = "play-big"; b.setAttribute("aria-label", "Ouvir a frase"); b.innerHTML = ICONE.play;
-    b.addEventListener("pointerdown", e => e.stopPropagation());
-    b.addEventListener("click", e => { e.stopPropagation(); tocar(1); });
-    corpo.appendChild(b);
-    setTimeout(() => tocar(1), 350);
-  }else if(modo === "comp"){
-    rotulo("Complete a frase");
-    const f = document.createElement("div"); corpo.appendChild(f);
-    painel(f, lacuna(card.Phrase, card.Word) || card.Phrase, null, animar);
-    corpo.insertAdjacentHTML("beforeend", `<div class="pt small">${esc(card.Translation)}</div>`);
-  }
 
-  const audioNaFrente = modo === "rec" || modo === "ouv";
-  $("btn-sound").disabled = $("btn-sound-slow").disabled = !voz.temFala || !audioNaFrente;
-  $("btn-speak").classList.toggle("hidden", !voz.temReconhecimento);
-  $("speak-label").textContent = modo === "prod" ? "Responder" : "Ler";
-  $("type-row").classList.toggle("hidden", modo !== "prod" && modo !== "comp");
-  $("type-answer").value = "";
-  $("type-answer").placeholder = modo === "comp" ? "Opcional: a palavra que falta" : "Opcional: escreva e confira";
+  if(a.tipo === "escrever"){
+    $("tk-mode").textContent = "Escrever";
+    $("tk-unit").textContent = "uma vez por dia";
+    $("tk-level").textContent = "3 frases";
+    rotulo("Escreva em inglês");
+    corpo.insertAdjacentHTML("beforeend", `<div class="pt-big">Conte em 3 frases o que você fez hoje, ou no trabalho.</div>
+      <p class="pt small">A IA corrige frase a frase, e cada erro vai pro seu mapa.</p>
+      <div class="row-2"><button class="btn btn-ghost" data-w="pular">Pular hoje</button><button class="btn btn-yel" data-w="ir">Escrever</button></div>`);
+    corpo.querySelectorAll("[data-w]").forEach(b => {
+      b.addEventListener("pointerdown", e => e.stopPropagation());
+      b.addEventListener("click", e => {
+        e.stopPropagation();
+        if(b.dataset.w === "pular"){ marcarEscrita(2); proximoCard(); }
+        else abrirTexto({ modo: "escrever" });
+      });
+    });
+    $("btn-sound").disabled = $("btn-sound-slow").disabled = true;
+    $("btn-speak").classList.add("hidden");
+    $("type-row").classList.add("hidden");
+  }else if(a.tipo === "ex"){
+    const it = a.item;
+    const s = state.pontos[a.ponto];
+    $("tk-mode").textContent = "Treino";
+    $("tk-unit").textContent = nomePonto(a.ponto);
+    $("tk-level").textContent = `${nivelPonto(a.ponto) === "X" ? "todos os níveis" : nivelPonto(a.ponto)} · ${E.NOME_ESTADO[E.estadoPonto(s, a.ponto, nivelBase())].toLowerCase()}`;
+    rotulo(it.Instrucao || "Responda");
+    if(it.Tipo === "traduzir") corpo.insertAdjacentHTML("beforeend", `<div class="pt-big">${esc(it.Frase)}</div>`);
+    else{ const f = document.createElement("div"); corpo.appendChild(f); painel(f, it.Frase, null, animar); }
+    $("btn-sound").disabled = $("btn-sound-slow").disabled = true;
+    $("btn-speak").classList.toggle("hidden", !voz.temReconhecimento);
+    $("speak-label").textContent = "Responder";
+    $("type-row").classList.remove("hidden");
+    $("type-answer").value = "";
+    $("type-answer").placeholder = it.Tipo === "completar" ? "Opcional: o que vai na lacuna" : "Opcional: escreva e confira";
+  }else{
+    const deck = deckDoAtual();
+    const card = cardAtual();
+    if(!card) return;
+    const modo = a.modo;
+    const unidade = deck.Trilha && card.Unit != null ? deck.Trilha[card.Unit] : null;
+    $("tk-mode").textContent = MODOS[modo].nome;
+    $("tk-unit").textContent = state.entrada === "tudo" ? deck.Name : (unidade ? unidade.Titulo : (card.Kind || "palavra"));
+    $("tk-level").textContent = `frase ${card.Level || 1}/${MAX_CARD_LEVEL}`;
+    if(modo === "rec"){
+      rotulo("O que quer dizer?");
+      const f = document.createElement("div"); corpo.appendChild(f);
+      painel(f, card.Phrase, card.Word, animar);
+    }else if(modo === "prod"){
+      rotulo(`Diga em ${idiomaLabel(deck.Language).toLowerCase()}`);
+      corpo.insertAdjacentHTML("beforeend", `<div class="pt-big">${esc(card.Translation)}</div>` +
+        (card.Kind === "palavra" ? "" : '<div class="pt small">use uma expressão</div>'));
+    }else if(modo === "ouv"){
+      rotulo("Ouça e entenda");
+      const b = document.createElement("button");
+      b.className = "play-big"; b.setAttribute("aria-label", "Ouvir a frase"); b.innerHTML = ICONE.play;
+      b.addEventListener("pointerdown", e => e.stopPropagation());
+      b.addEventListener("click", e => { e.stopPropagation(); tocar(1); });
+      corpo.appendChild(b);
+      setTimeout(() => tocar(1), 350);
+    }else if(modo === "comp"){
+      rotulo("Complete a frase");
+      const f = document.createElement("div"); corpo.appendChild(f);
+      painel(f, lacuna(card.Phrase, card.Word) || card.Phrase, null, animar);
+      corpo.insertAdjacentHTML("beforeend", `<div class="pt small">${esc(card.Translation)}</div>`);
+    }
+    const audioNaFrente = modo === "rec" || modo === "ouv";
+    $("btn-sound").disabled = $("btn-sound-slow").disabled = !voz.temFala || !audioNaFrente;
+    $("btn-speak").classList.toggle("hidden", !voz.temReconhecimento);
+    $("speak-label").textContent = modo === "prod" ? "Responder" : "Ler";
+    $("type-row").classList.toggle("hidden", modo !== "prod" && modo !== "comp");
+    $("type-answer").value = "";
+    $("type-answer").placeholder = modo === "comp" ? "Opcional: a palavra que falta" : "Opcional: escreva e confira";
+  }
 
   if(animar && !reduzMovimento){
     $("ticket-stage").animate(
@@ -444,21 +798,31 @@ function mostrarFrente(animar){
 }
 
 function renderVerso(){
+  const corpo = $("back-body");
+  corpo.innerHTML = "";
+  const f = document.createElement("div"); corpo.appendChild(f);
+  const ex = exAtual();
+  if(ex){
+    const s = state.pontos[ex.ponto];
+    $("tk-mode-b").textContent = "Treino";
+    $("tk-dom").textContent = s && s.n ? `domínio ${Math.round(s.m * 100)}%` : "ponto novo";
+    $("tk-alvo").textContent = nomePonto(ex.ponto);
+    painel(f, respostaCompleta(ex.item), ex.item.Tipo === "completar" ? ex.item.Resposta : null, true);
+    if(ex.item.Explicacao) corpo.insertAdjacentHTML("beforeend", `<div class="pt small">${esc(ex.item.Explicacao)}</div>`);
+    return;
+  }
   const card = cardAtual();
   const modo = state.atual.modo;
   $("tk-mode-b").textContent = MODOS[modo].nome;
   const s = estadoModo(card, modo);
   $("tk-dom").textContent = s.n ? `domínio ${Math.round(s.m * 100)}%` : "card novo";
   $("tk-alvo").textContent = `alvo: ${card.Word}`;
-  const corpo = $("back-body");
-  corpo.innerHTML = "";
-  const f = document.createElement("div"); corpo.appendChild(f);
   painel(f, card.Phrase, card.Word, true);
   corpo.insertAdjacentHTML("beforeend", `<div class="pt">${esc(card.Translation)}</div>`);
 }
 
 function virar(){
-  if(!cardAtual()) return;
+  if(!temItem()) return;
   if(!state.virado){
     if(!state.visto) renderVerso();
     state.virado = true;
@@ -469,7 +833,7 @@ function virar(){
     $("btn-sound").disabled = $("btn-sound-slow").disabled = !voz.temFala;
     $("speak-label").textContent = "Repetir";
     $("type-row").classList.add("hidden");
-    if(primeira && prefs().autoplay && state.atual.modo !== "ouv") tocar(1);
+    if(primeira && prefs().autoplay && (exAtual() || state.atual.modo !== "ouv")) tocar(1);
   }else{
     state.virado = false;
     $("ticket").classList.remove("flipped");
@@ -483,9 +847,11 @@ function sugerirNota(nota){
   document.querySelectorAll(".grade").forEach(b => b.classList.toggle("sugerido", b.dataset.nota === nota));
 }
 function tocar(velocidade){
+  const ex = exAtual();
+  if(ex){ voz.falar(respostaCompleta(ex.item), { idioma: "en", voz: prefs().voz, velocidade }); return; }
   const card = cardAtual();
   if(!card) return;
-  voz.falar(card.Phrase, { idioma: state.decks[state.currentDeckId].Language, voz: prefs().voz, velocidade });
+  voz.falar(card.Phrase, { idioma: deckDoAtual().Language, voz: prefs().voz, velocidade });
 }
 
 function limparFeedback(){
@@ -512,13 +878,18 @@ function htmlComparacao(marcas, dito){
   return `<div class="fb-line"><span class="fb-label">esperado</span>${palavras}</div>` +
     `<div class="fb-line"><span class="fb-label">você disse</span>${esc(dito || "(nada)")}</div>`;
 }
+// Linha que diz quais erros foram pro mapa.
+function htmlAnotados(lista){
+  const ids = [...new Set((lista || []).map(e => e.Ponto).filter(pontoValido))];
+  return ids.length ? `<div class="fb-line fb-mapa"><span class="fb-label">pro mapa</span>${ids.map(id => esc(nomePonto(id))).join(" · ")}</div>` : "";
+}
 
 let falasPendentes = 0;
 async function falarResposta(){
+  if(!temItem()) return;
+  const ex = exAtual();
   const card = cardAtual();
-  if(!card) return;
-  const deck = state.decks[state.currentDeckId];
-  const modo = state.atual.modo;
+  const idioma = ex ? "en" : deckDoAtual().Language;
   const btn = $("btn-speak");
   if(btn.classList.contains("ouvindo")){ voz.pararOuvir(); return; }
   voz.pararFala();
@@ -528,7 +899,7 @@ async function falarResposta(){
   mostrarFeedback(`<div class="fb-line muted">${ONDA}Ouvindo…</div>`);
   let dito = "";
   try{
-    dito = await voz.ouvir({ idioma: deck.Language, onParcial: t => mostrarFeedback(`<div class="fb-line">${ONDA}${esc(t)}</div>`) });
+    dito = await voz.ouvir({ idioma, onParcial: t => mostrarFeedback(`<div class="fb-line">${ONDA}${esc(t)}</div>`) });
   }catch(err){
     mostrarFeedback(`<div class="fb-line muted">${esc(err.message)}</div>`);
     return;
@@ -538,8 +909,9 @@ async function falarResposta(){
   }
   if(!dito){ mostrarFeedback('<div class="fb-line muted">Não ouvi nada. Tente de novo, ou responda pelos botões.</div>'); return; }
   falasPendentes++;
-  if(modo === "prod" && !state.visto){ await avaliarProducao(dito, true); return; }
-  const { sim, marcas } = voz.comparar(card.Phrase, dito);
+  if(ex && !state.visto){ await avaliarExercicio(dito, true); return; }
+  if(!ex && state.atual.modo === "prod" && !state.visto){ await avaliarProducao(dito, true); return; }
+  const { sim, marcas } = voz.comparar(ex ? respostaCompleta(ex.item) : card.Phrase, dito);
   if(!state.virado) virar();
   mostrarFeedback(htmlComparacao(marcas, dito) + `<div class="fb-line"><span class="fb-label">pronúncia</span>${Math.round(sim * 100)}% das palavras reconhecidas</div>`, true);
   sugerirNota(voz.notaPorSimilaridade(sim));
@@ -547,15 +919,33 @@ async function falarResposta(){
 
 async function avaliarProducao(resposta, falada){
   const card = cardAtual();
-  const deck = state.decks[state.currentDeckId];
+  const deck = deckDoAtual();
   mostrarFeedback('<div class="fb-line muted"><span class="onda"><i></i><i></i><i></i></span>Conferindo com a IA…</div>');
   try{
     const r = await pedir(P.pedidoAvaliarProducao(deck, card, resposta, falada));
     if(!state.virado) virar();
     const ok = r.Nota === "facil" || r.Nota === "acertei";
+    if(r.Erros){ anotarErros(r.Erros, "produzir"); anotarProducao("produzir", r.Erros.map(e => e.Ponto)); }
     mostrarFeedback(
       `<div class="fb-line"><span class="fb-label">você ${falada ? "disse" : "escreveu"}</span>${esc(resposta)}</div>` +
       (ok && !r.Explicacao ? "" : `<div class="fb-line"><span class="fb-label">melhor</span>${esc(r.Correcao)}</div>`) +
+      (r.Explicacao ? `<div class="fb-line muted">${esc(r.Explicacao)}</div>` : "") + htmlAnotados(r.Erros), falada);
+    sugerirNota(r.Nota);
+  }catch(err){
+    mostrarFeedback(`<div class="fb-line muted">${esc(err.message)}</div>`);
+  }
+}
+
+async function avaliarExercicio(resposta, falada){
+  const ex = exAtual();
+  mostrarFeedback('<div class="fb-line muted"><span class="onda"><i></i><i></i><i></i></span>Conferindo com a IA…</div>');
+  try{
+    const r = await pedir(P.pedidoAvaliarExercicio(ex.ponto, ex.item, resposta, falada));
+    if(state.atual !== ex) return;
+    if(!state.virado) virar();
+    mostrarFeedback(
+      `<div class="fb-line"><span class="fb-label">você ${falada ? "disse" : "escreveu"}</span>${esc(resposta)}</div>` +
+      `<div class="fb-line"><span class="fb-label">melhor</span>${esc(r.Correcao)}</div>` +
       (r.Explicacao ? `<div class="fb-line muted">${esc(r.Explicacao)}</div>` : ""), falada);
     sugerirNota(r.Nota);
   }catch(err){
@@ -563,13 +953,23 @@ async function avaliarProducao(resposta, falada){
   }
 }
 
+const limparResposta = t => t.toLowerCase().replace(/[^\p{L}\p{N}' ]/gu, "").replace(/\s+/g, " ").trim();
 function conferirDigitado(){
-  const card = cardAtual();
   const texto = $("type-answer").value.trim();
-  if(!card || !texto) return;
+  if(!temItem() || !texto) return;
   $("type-answer").blur();
+  const ex = exAtual();
+  if(ex && ex.item.Tipo === "completar"){
+    const nota = limparResposta(texto) === limparResposta(ex.item.Resposta) ? "facil" : "errei";
+    if(!state.virado) virar();
+    mostrarFeedback(`<div class="fb-line"><span class="fb-label">você escreveu</span>${esc(texto)}</div>`);
+    sugerirNota(nota);
+    return;
+  }
+  if(ex){ avaliarExercicio(texto, false); return; }
+  const card = cardAtual();
   if(state.atual.modo === "comp"){
-    const dado = texto.toLowerCase().replace(/[^\p{L}\p{N}' ]/gu, "").trim();
+    const dado = limparResposta(texto);
     const alvo = card.Word.toLowerCase().trim();
     const nota = dado === alvo ? "facil" : (dado && alvo.startsWith(dado.slice(0, Math.max(3, dado.length - 2))) ? "quase" : "errei");
     if(!state.virado) virar();
@@ -600,23 +1000,36 @@ async function gravarVoz(btn){
 
 let respondendo = false;
 async function responder(notaKey, saida){
-  const deckId = state.currentDeckId;
-  const card = cardAtual();
-  if(!card || !state.visto || respondendo) return;
+  if(!temItem() || !state.visto || respondendo) return;
   respondendo = true;
   setNotas(false);
   voz.pararFala();
   vibrar(notaKey === "errei" ? 30 : 12);
-  const key = state.atual.key;
-  const { maduro } = registrarResposta(card, state.atual.modo, notaKey);
   const acerto = notaKey === "acertei" || notaKey === "facil";
-  somarDia({ r: 1, a: acerto ? 1 : 0, rm: maduro ? 1 : 0, ra: maduro && acerto ? 1 : 0, f: falasPendentes });
+  const ex = exAtual();
+  if(ex){
+    state.pontos[ex.ponto] = E.registrarTreino(state.pontos[ex.ponto], notaKey);
+    salvarPonto(ex.ponto);
+    const lote = state.exercicios[ex.ponto];
+    if(lote){ lote.i += 1; fb.dbPatch(fb.meu(`/Exercicios/${ex.ponto}`), { i: lote.i }).catch(() => {}); }
+    somarDia({ r: 1, a: acerto ? 1 : 0, f: falasPendentes });
+    state.desdeExercicio = 0;
+    // O lote acabando: a IA prepara o próximo enquanto ele estuda.
+    if(lote && lote.i >= lote.itens.length - 1) gerarExercicios(ex.ponto).catch(() => {});
+  }else{
+    const deckId = state.atual.deckId;
+    const card = cardAtual();
+    const key = state.atual.key;
+    const { maduro } = registrarResposta(card, state.atual.modo, notaKey);
+    somarDia({ r: 1, a: acerto ? 1 : 0, rm: maduro ? 1 : 0, ra: maduro && acerto ? 1 : 0, f: falasPendentes });
+    fb.dbPatch(fb.meu(`/Decks/${deckId}/Cards/${key}`), {
+      Modes: card.Modes, EasyStreak: card.EasyStreak, LearnedAt: card.LearnedAt || null,
+    }).catch(err => toast(err.message));
+    if(card.EasyStreak >= EVOLVE_STREAK_THRESHOLD) evoluirCard(deckId, key);
+    state.desdeExercicio++;
+  }
   falasPendentes = 0;
-  fb.dbPatch(fb.meu(`/Decks/${deckId}/Cards/${key}`), {
-    Modes: card.Modes, EasyStreak: card.EasyStreak, LearnedAt: card.LearnedAt || null,
-  }).catch(err => toast(err.message));
   publicarJuntos();
-  if(card.EasyStreak >= EVOLVE_STREAK_THRESHOLD) evoluirCard(deckId, key);
 
   const contador = $("stat-today-top");
   contador.textContent = hojeR();
@@ -727,7 +1140,7 @@ function renderDecks(){
         <div class="dc-foot"><span>${cards.length} cards</span><span>${cards.filter(c => c.LearnedAt).length} aprendidos</span></div>
       </div>
       <div class="dc-actions"><button class="btn btn-yel btn-sm" data-a="study">Estudar</button><button class="btn btn-ghost btn-sm" data-a="open">Abrir</button></div>`;
-    el.querySelector('[data-a="study"]').addEventListener("click", () => { state.currentDeckId = id; lembrarDeck(id); irPara("v-study"); });
+    el.querySelector('[data-a="study"]').addEventListener("click", () => { state.currentDeckId = id; state.pontoTreino = null; lembrarDeck(id); lembrarEntrada("deck"); irPara("v-study"); });
     el.querySelector('[data-a="open"]').addEventListener("click", () => abrirDeck(id));
     box.appendChild(el);
   });
@@ -746,6 +1159,8 @@ function formDeck(modo, id){
     <label class="field"><span>Objetivo</span><input id="f-goal" value="${esc(d.Objetivo || "")}" placeholder="Ex.: conseguir vaga de desenvolvedor no exterior"></label>
     <label class="field"><span>Sobre você (opcional)</span><input id="f-context" value="${esc(d.Contexto || "")}" placeholder="Ex.: desenvolvedor Unity/VR há 6 anos"></label>
     <button class="btn btn-yel btn-block" id="f-save">${modo === "edit" ? "Salvar" : "Criar e montar a trilha"}</button>`);
+  enfeitar(c.querySelector("#f-lang"));
+  enfeitar(c.querySelector("#f-level"));
   c.querySelector("#f-save").addEventListener("click", () => salvarDeck(modo, id, {
     Name: c.querySelector("#f-name").value.trim(),
     Language: c.querySelector("#f-lang").value,
@@ -1128,6 +1543,7 @@ function preencherSelect(sel, atual){
   sel.innerHTML = ids.length ? ids.map(id => `<option value="${id}">${esc(state.decks[id].Name)}</option>`).join("") : '<option value="">Nenhum baralho</option>';
   sel.disabled = !ids.length;
   if(ids.length) sel.value = atual && state.decks[atual] ? atual : ids[0];
+  enfeitar(sel);
 }
 
 function marcarCenario(v){
@@ -1180,6 +1596,7 @@ function abrirSala(){
 
 async function comecarConversa(){
   if(state.conversa){ abrirSala(); return; }
+  if(state.cenario === "falar2"){ abrirTexto({ modo: "falar" }); return; }
   const deckId = $("talk-deck").value;
   if(!state.decks[deckId]){ toast("Crie um baralho antes."); return; }
   state.conversa = {
@@ -1198,6 +1615,14 @@ async function turnoIA(){
   renderChat();
   try{
     const r = await pedir(P.pedidoTurno(deck, c.opcoes, c.turnos));
+    // A correção é da última fala dele: o erro vai pro mapa, e a fala conta como frase dele.
+    const ultima = c.turnos[c.turnos.length - 1];
+    if(ultima && ultima.quem === "eu" && P.classifica(deck)){
+      const cor = r.Correcao || {};
+      const ponto = cor.Melhor && pontoValido(cor.Ponto) ? cor.Ponto : "";
+      if(ponto) anotarErros([{ Ponto: ponto, Original: cor.Original, Certo: cor.Melhor, Explicacao: cor.Explicacao }], "conversa");
+      anotarProducao("conversa", ponto ? [ponto] : []);
+    }
     c.turnos.push({ quem: "ia", texto: r.Fala, correcao: r.Correcao && r.Correcao.Melhor ? r.Correcao : null });
     if($("talk-autospeak").checked) voz.falar(r.Fala, { idioma: deck.Language, voz: prefs().voz });
   }catch(err){ toast(err.message); }
@@ -1306,10 +1731,10 @@ function mostrarRelatorio(r, deckId){
     <div class="route-head"><h2>Relatório</h2><span class="tag yel">nível ${esc(r.NivelPercebido)}</span></div>
     <p class="hint" style="color:var(--ink)">${esc(r.Resumo)}</p>
     ${r.Erros?.length ? `<div class="section-title flat">Erros para treinar</div>` + r.Erros.map(e =>
-      `<div class="erro"><div><span class="fb-label">você</span>${esc(e.Original)}</div><div><span class="fb-label">melhor</span><b>${esc(e.Melhor)}</b></div><div class="muted">${esc(e.Explicacao)}</div></div>`).join("") : ""}
+      `<div class="erro"><div><span class="fb-label">você</span>${esc(e.Original)}</div><div><span class="fb-label">melhor</span><b>${esc(e.Melhor)}</b></div><div class="muted">${esc(e.Explicacao)}</div>${pontoValido(e.Ponto) ? `<span class="tag yel">${esc(nomePonto(e.Ponto))}</span>` : ""}</div>`).join("") : ""}
     ${r.FrasesUteis?.length ? `<div class="section-title flat">Frases que ajudam</div><ul class="frases">${r.FrasesUteis.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
     ${cards.length && deck ? `<div class="section-title flat">Cards sugeridos</div><div class="batch-list" id="report-cards">${cards.map((c, i) =>
-      `<label class="batch-item"><div><div class="batch-word">${esc(c.Word)} <span class="tag">${esc(c.Kind)}</span></div><div class="batch-phrase">${marcarAlvo(c.Phrase, c.Word)}</div></div><input type="checkbox" data-i="${i}" checked style="width:22px;height:22px;accent-color:var(--yel)"></label>`).join("")}</div>
+      `<label class="batch-item"><div><div class="batch-word">${esc(c.Word)} <span class="tag">${esc(c.Kind)}</span></div><div class="batch-phrase">${marcarAlvo(c.Phrase, c.Word)}</div></div><input type="checkbox" data-i="${i}" checked aria-label="Adicionar este card"></label>`).join("")}</div>
       <button class="btn btn-yel btn-block" id="btn-report-add">Adicionar os marcados a "${esc(deck.Name)}"</button>` : ""}
   </div>`;
   box.classList.remove("hidden");
@@ -1330,6 +1755,89 @@ function mostrarRelatorio(r, deckId){
     add.disabled = true;
   });
   box.scrollIntoView({ behavior: reduzMovimento ? "auto" : "smooth", block: "start" });
+}
+
+// =========================================================
+// ESCREVER 3 FRASES E FALAR 2 MINUTOS
+// =========================================================
+function temaDoDia(desvio = 0){
+  const d = new Date();
+  const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + desvio;
+  return TEMAS_FALA[((n % TEMAS_FALA.length) + TEMAS_FALA.length) % TEMAS_FALA.length];
+}
+const MIC = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/></svg>';
+
+function abrirTexto({ modo, desvio = 0 }){
+  const falar = modo === "falar";
+  const tema = falar ? temaDoDia(desvio) : "";
+  let gravando = false, timer = null, t0 = 0;
+  const parar = () => { gravando = false; voz.pararOuvir(); clearInterval(timer); };
+  const c = abrirFolha(`
+    <h2 class="sheet-title">${falar ? "Falar 2 minutos" : "Escrever 3 frases"}</h2>
+    <p class="sheet-sub">${falar ? esc(tema) : "Conte em 3 frases o que você fez hoje, ou no trabalho."}</p>
+    ${falar && voz.temReconhecimento ? `<div class="fala-box"><button class="mic-big" id="tx-mic" aria-label="Falar">${MIC}</button>
+      <div><b id="tx-tempo">0:00</b><span class="hint" id="tx-status">Toque e fale por até 2 minutos. Toque de novo pra parar.</span></div></div>` : ""}
+    <textarea id="tx-texto" rows="${falar ? 6 : 4}" placeholder="${falar ? "O que você falar aparece aqui. Dá pra escrever também." : "Escreva em inglês"}"></textarea>
+    <div class="row-2">${falar ? '<button class="btn btn-ghost" id="tx-outro">Outro tema</button>' : '<button class="btn btn-ghost" id="tx-pular">Pular hoje</button>'}
+      <button class="btn btn-yel" id="tx-ok">Corrigir</button></div>`, { aoFechar: parar });
+  const area = c.querySelector("#tx-texto");
+  c.querySelector("#tx-pular")?.addEventListener("click", () => { marcarEscrita(2); fecharFolha(); if(state.atual?.tipo === "escrever") proximoCard(); });
+  c.querySelector("#tx-outro")?.addEventListener("click", () => { parar(); abrirTexto({ modo, desvio: desvio + 1 }); });
+  const mic = c.querySelector("#tx-mic");
+  mic?.addEventListener("click", async () => {
+    if(gravando){ parar(); mic.classList.remove("ouvindo"); return; }
+    gravando = true; t0 = Date.now(); mic.classList.add("ouvindo");
+    c.querySelector("#tx-status").textContent = "Ouvindo…";
+    timer = setInterval(() => {
+      const s = Math.floor((Date.now() - t0) / 1000);
+      const el = c.querySelector("#tx-tempo");
+      if(el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      if(s >= 120){ parar(); mic.classList.remove("ouvindo"); }
+    }, 250);
+    // O reconhecimento para sozinho depois de um silêncio: volta a ouvir até ele parar.
+    while(gravando){
+      const antes = area.value.trim();
+      try{
+        const dito = await voz.ouvir({ idioma: "en", continuo: true, onParcial: x => { area.value = (antes ? antes + " " : "") + x; } });
+        area.value = (antes ? antes + " " : "") + dito;
+      }catch(err){ toast(err.message); parar(); }
+    }
+    mic.classList.remove("ouvindo");
+    const st = c.querySelector("#tx-status"); if(st) st.textContent = "Pode corrigir, ou tocar de novo pra continuar.";
+  });
+  c.querySelector("#tx-ok").addEventListener("click", async e => {
+    const texto = area.value.trim();
+    if(texto.split(/\s+/).length < 4){ toast(falar ? "Fale um pouco mais antes de corrigir." : "Escreva pelo menos uma frase."); return; }
+    parar();
+    let r = null;
+    await acao("Corrigindo…", async () => {
+      r = await pedir(P.pedidoCorrigirTexto(texto.slice(0, 6000), { objetivo: objetivoIngles(), tema, falada: falar && !!mic }));
+    }, e.currentTarget);
+    if(!r) return;
+    const fonte = falar ? "falar" : "escrever";
+    anotarErros(r.Frases.flatMap(f => f.Erros || []), fonte);
+    r.Frases.forEach(f => anotarProducao(fonte, (f.Erros || []).map(x => x.Ponto)));
+    if(falar) somarDia({ f: 1 }); else marcarEscrita(1);
+    mostrarCorrecaoTexto(r, falar);
+  });
+}
+
+function mostrarCorrecaoTexto(r, falar){
+  const c = abrirFolha(`
+    <h2 class="sheet-title">Correção</h2>
+    <p class="sheet-sub">${esc(r.Comentario)}</p>
+    ${r.Frases.map(f => {
+      const certa = !(f.Erros || []).length && f.Original.trim() === f.Certo.trim();
+      return `<div class="erro ${certa ? "certa" : ""}"><div><span class="fb-label">você</span>${esc(f.Original)}</div>
+        ${certa ? "" : `<div><span class="fb-label">melhor</span><b>${esc(f.Certo)}</b></div>`}
+        ${(f.Erros || []).map(x => `<div class="muted">${pontoValido(x.Ponto) ? `<span class="tag yel">${esc(nomePonto(x.Ponto))}</span> ` : ""}${esc(x.Explicacao)}</div>`).join("")}</div>`;
+    }).join("")}
+    ${r.Melhores?.length ? `<div class="section-title flat">${falar ? "Três frases prontas pra próxima" : "Frases que ajudam"}</div><ul class="frases">${r.Melhores.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
+    <button class="btn btn-yel btn-block" id="tx-fim">Continuar</button>`);
+  c.querySelector("#tx-fim").addEventListener("click", () => {
+    fecharFolha();
+    if(state.atual?.tipo === "escrever" && viewAtual === "v-study") proximoCard();
+  });
 }
 
 // =========================================================
@@ -1370,11 +1878,14 @@ function renderJuntos(){
           <div><b>${esc(m.Nivel || "—")}</b><span>nível</span></div>
         </div>
         <div class="bars mini">${dias.map(r => `<div class="bar-col"><div class="bar-fill" style="height:${Math.max(6, Math.round(r / max * 100))}%"></div></div>`).join("")}</div>
+        ${m.Regua && m.Regua.prox ? `<div class="m-regua"><span>${esc(m.Regua.prox)} · ${m.Regua.pct}%</span><div class="progress"><i style="width:${m.Regua.pct}%"></i></div></div>` : ""}
+        ${(m.Fracos3 || []).filter(id => PONTO[id]).length ? `<div class="m-fracos">${m.Fracos3.filter(id => PONTO[id]).map(id => `<span>${esc(nomePonto(id))}</span>`).join("")}</div>` : ""}
       </div>
-      ${eu ? '<button class="btn btn-ghost btn-sm m-you" id="btn-you">Você · estatísticas e ajustes</button>' : ""}`;
+      ${eu ? '<button class="btn btn-ghost btn-sm m-you" id="btn-you">Você · régua e ajustes</button>' : `<button class="btn btn-ghost btn-sm m-you" data-outro="${uid}">Ver o progresso</button>`}`;
     grid.appendChild(el);
   });
   $("btn-you")?.addEventListener("click", () => irPara("v-you", { camada: true }));
+  grid.querySelectorAll("[data-outro]").forEach(b => b.addEventListener("click", () => { state.outroUid = b.dataset.outro; irPara("v-outro", { camada: true }); }));
   const roteiros = membros.map(([, m]) => m.Roteiro).filter(r => r && r.data === hoje).sort((a, b) => (b.criado || "").localeCompare(a.criado || ""));
   $("route-date").textContent = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   renderRoteiro(roteiros[0]);
@@ -1395,7 +1906,7 @@ function renderRoteiro(rot){
 }
 
 async function gerarRoteiro(){
-  const membros = Object.values(state.juntos).map(m => ({ Nome: m.Nome, Nivel: m.Nivel, Objetivo: m.Objetivo, Fracas: m.Fracas || [] }));
+  const membros = Object.values(state.juntos).map(m => ({ Nome: m.Nome, Nivel: m.Nivel, Objetivo: m.Objetivo, Fracas: m.Fracas || [], Pontos: (m.Fracos3 || []).filter(id => PONTO[id]).map(nomePonto) }));
   if(!membros.length) return;
   const idioma = (Object.values(state.juntos)[0] || {}).Idioma || "en";
   await acao("Montando o roteiro…", async () => {
@@ -1443,12 +1954,225 @@ function carAvancar(d){
 }
 
 // =========================================================
+// MEUS ERROS, AULA E RÉGUA (ES-22)
+// =========================================================
+// Abre uma aba da barra de baixo a partir de uma subtela, fechando as camadas.
+function irParaAba(view){
+  while(camadas.length){ camadas.pop(); history.back(); }
+  if(!$("sheet-root").hidden){ $("sheet-root").classList.remove("aberta"); $("sheet-root").hidden = true; }
+  irPara(view);
+}
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+const dataCurta = iso => iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
+
+function linhaPonto({ id, estado, erros, o, c, m }){
+  const nv = nivelPonto(id);
+  return `<button class="ponto-row est-${estado}" data-id="${id}">
+    <span class="pr-nome">${esc(nomePonto(id))}</span>
+    <span class="pr-num">${plural(erros, "erro", "erros")} · ${nv === "X" ? "todos" : nv}</span>
+    ${o ? `<span class="pr-ex"><s>${esc(o)}</s> → ${esc(c)}</span>` : ""}
+    ${m !== undefined ? `<span class="dom"><i style="width:${Math.round(m * 100)}%"></i></span>` : ""}
+  </button>`;
+}
+
+function renderErros(){
+  const base = nivelBase();
+  const lista = E.pontosComErro(state.pontos, base);
+  const por = { treinando: [], quase: [], dominado: [] };
+  lista.forEach(x => por[x.estado] && por[x.estado].push(x));
+  const total = lista.reduce((a, x) => a + x.reg.erros, 0);
+  $("erros-resumo").textContent = lista.length ? `${plural(lista.length, "ponto", "pontos")} · ${plural(total, "erro", "erros")}` : "";
+  $("erros-tabs").querySelectorAll("button").forEach(b => {
+    b.classList.toggle("on", b.dataset.tab === state.errosAba);
+    b.querySelector("small").textContent = por[b.dataset.tab].length;
+  });
+  const box = $("erros-lista");
+  if(!lista.length){
+    box.innerHTML = `<div class="empty"><div class="empty-title">Nenhum erro ainda</div><p>Os erros do Produzir, da Conversa, do Escrever, do Falar e do teste de Nível entram aqui, cada um no ponto de gramática dele.</p></div>`;
+  }else{
+    const itens = por[state.errosAba];
+    box.innerHTML = itens.length ? itens.map(({ id, reg, estado }) => {
+      const ult = errosDoPonto(id)[0];
+      return linhaPonto({ id, estado, erros: reg.erros, o: ult && ult[1].o, c: ult && ult[1].c, m: reg.m });
+    }).join("") : `<p class="empty-line">${state.errosAba === "dominado" ? "Nenhum ponto dominado ainda. Um ponto é dominado quando você acerta em 3 dias diferentes, sem errar nos últimos 7." : "Nenhum ponto aqui."}</p>`;
+    box.querySelectorAll(".ponto-row").forEach(b => b.addEventListener("click", () => abrirPonto(b.dataset.id)));
+  }
+  const emTreino = por.treinando.length + por.quase.length;
+  $("btn-treinar-erros").disabled = !emTreino;
+  $("btn-treinar-erros").textContent = emTreino ? `Treinar os ${plural(emTreino, "ponto", "pontos")}` : "Treinar os erros";
+}
+
+function abrirPonto(id){
+  state.pontoId = id;
+  irPara("v-ponto", { camada: true });
+}
+
+async function carregarAula(id, refazer = false){
+  if(!refazer && state.aulas[id]) return state.aulas[id];
+  if(!refazer){
+    const salva = await fb.dbGet(fb.meu(`/Aulas/${id}`)).catch(() => null);
+    if(salva){ state.aulas[id] = salva; return salva; }
+  }
+  const conteudo = await pedir(P.pedidoAula(id, errosDoPonto(id).map(([, e]) => e), objetivoIngles()));
+  state.aulas[id] = { conteudo, criado: new Date().toISOString() };
+  fb.dbPut(fb.meu(`/Aulas/${id}`), state.aulas[id]).catch(() => {});
+  return state.aulas[id];
+}
+
+function renderPonto(){
+  const id = state.pontoId;
+  if(!PONTO[id]) return;
+  const base = nivelBase();
+  const reg = state.pontos[id];
+  const estado = E.estadoPonto(reg, id, base);
+  const nv = nivelPonto(id);
+  $("ponto-nome").textContent = nomePonto(id);
+  $("ponto-meta").innerHTML = `<span class="tag yel">${nv === "X" ? "todos os níveis" : nv}</span><span class="tag est-${estado}">${E.NOME_ESTADO[estado]}</span>` +
+    (reg ? `<span class="tag">${plural(reg.erros || 0, "erro", "erros")}</span><span class="tag">domínio ${Math.round((reg.m || 0) * 100)}%</span>` : "");
+  const erros = errosDoPonto(id);
+  $("ponto-erros").innerHTML = erros.length ? erros.slice(0, 20).map(([k, e]) => `
+    <div class="erro"><div><span class="fb-label">você</span>${esc(e.o)}</div><div><span class="fb-label">certo</span><b>${esc(e.c)}</b></div>
+      ${e.e ? `<div class="muted">${esc(e.e)}</div>` : ""}
+      <div class="erro-pe"><span>${esc(FONTE_NOME[e.f] || e.f || "")} · ${dataCurta(e.d)}</span><button class="link" data-mover="${k}">Mover de ponto</button></div></div>`).join("")
+    : '<p class="empty-line">Nenhum erro seu neste ponto.</p>';
+  $("ponto-erros").querySelectorAll("[data-mover]").forEach(b => b.addEventListener("click", () => moverErro(b.dataset.mover)));
+  const aula = $("ponto-aula");
+  aula.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+  carregarAula(id).then(a => { if(state.pontoId === id) mostrarAula(a.conteudo); })
+    .catch(err => { if(state.pontoId === id) aula.innerHTML = `<p class="empty-line">${esc(err.message)}</p>`; });
+}
+
+function mostrarAula(a){
+  const box = $("ponto-aula");
+  box.innerHTML = `
+    <div class="section-title flat">Por que você erra</div><p class="aula-p">${esc(a.PorQue)}</p>
+    <div class="section-title flat">Como é o certo</div><div class="regra">${esc(a.Regra)}</div>
+    <div class="exemplos">${(a.Exemplos || []).map((x, i) => `<div class="exemplo"><div><b>${esc(x.En)}</b><span>${esc(x.Pt)}</span></div><button class="icon-btn" data-ouvir="${i}" aria-label="Ouvir">${ICONE.som}</button></div>`).join("")}</div>
+    <div class="section-title flat">Pra não confundir</div><p class="aula-p">${esc(a.NaoConfundir)}</p>
+    <button class="link" id="btn-refazer-aula">Refazer a aula</button>`;
+  box.querySelectorAll("[data-ouvir]").forEach(b => b.addEventListener("click", () => voz.falar(a.Exemplos[+b.dataset.ouvir].En, { idioma: "en", voz: prefs().voz })));
+  $("btn-refazer-aula").addEventListener("click", async e => {
+    const id = state.pontoId;
+    await acao("Refazendo a aula…", async () => { const n = await carregarAula(id, true); if(state.pontoId === id) mostrarAula(n.conteudo); }, e.currentTarget);
+  });
+}
+
+function treinarPonto(){
+  state.pontoTreino = state.pontoId;
+  irParaAba("v-study");
+}
+
+// A IA pode pôr um erro no ponto vizinho: ele move com um toque, escolhendo da lista.
+function moverErro(k){
+  const e = state.erros[k];
+  if(!e) return;
+  const grupos = ["A1", "A2", "B1", "B2", "C1", "X"];
+  const c = abrirFolha(`
+    <h2 class="sheet-title">Mover pra qual ponto?</h2>
+    <p class="sheet-sub"><s>${esc(e.o)}</s> → ${esc(e.c)}</p>
+    ${grupos.map(g => `<div class="section-title flat">${g === "X" ? "Todos os níveis" : g}</div>
+      <div class="menu">${PONTOS.filter(p => p.n === g).map(p => `<button data-p="${p.id}" class="${p.id === e.p ? "on" : ""}">${esc(p.nome)}</button>`).join("")}</div>`).join("")}`);
+  c.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => {
+    const novo = b.dataset.p;
+    fecharFolha();
+    if(novo === e.p) return;
+    const velho = e.p;
+    if(state.pontos[velho]){
+      state.pontos[velho].erros = Math.max(0, (state.pontos[velho].erros || 0) - 1);
+      salvarPonto(velho);
+    }
+    const presumido = E.estadoPonto(state.pontos[novo], novo, nivelBase()) === "presumido";
+    state.pontos[novo] = E.registrarErroPonto(state.pontos[novo], { presumido });
+    salvarPonto(novo);
+    e.p = novo;
+    fb.dbPatch(fb.meu(`/Erros/${k}`), { p: novo }).catch(err => toast(err.message));
+    toast(`Erro movido para ${nomePonto(novo)}.`);
+    publicarJuntos();
+    renderPonto();
+  }));
+}
+
+// ---------- Régua ----------
+// niveis: [{ n, pct }] de A1 a C1, com pct de 0 a 1.
+function reguaHtml(niveis, atual, interativo){
+  const idx = atual ? NIVEIS_REGUA.indexOf(atual) : -1;
+  return `<div class="regua">${niveis.map((nv, i) => {
+    const pct = Math.round(nv.pct * 100);
+    const cls = i <= idx ? "seu" : i === idx + 1 ? "prox" : "";
+    return `<${interativo ? "button" : "div"} class="rg-linha ${cls}" data-nivel="${nv.n}">
+      <b>${nv.n}</b><span class="rg-barra"><i style="width:${pct}%"></i><em></em></span><span class="rg-pct">${pct}%</span></${interativo ? "button" : "div"}>`;
+  }).join("")}<div class="rg-legenda">a partir de ${Math.round(E.LIMIAR * 100)}%, o nível conta como seu</div></div>`;
+}
+
+function renderRegua(){
+  const box = $("regua-box");
+  const r = minhaRegua();
+  const base = nivelBase();
+  box.innerHTML = `
+    <div class="route-head"><span class="section-title flat">Régua de nível</span><span class="tag yel">${r.atual ? "Seu nível: " + r.atual : "Ainda sem nível"}</span></div>
+    ${r.prox ? `<p class="hint">Próximo: <b style="color:var(--ink)">${r.prox}</b>, com ${Math.round(r.pctProx * 100)}%. Toque num nível pra ver o que ele pede.</p>` : ""}
+    ${reguaHtml(r.niveis, r.atual, true)}
+    ${base ? `<p class="hint">Parte do ${base} ${state.perfil.Base ? `do nivelamento de ${dataCurta(state.perfil.Base.data + "T12:00:00")}` : "do último teste de Nível"}: os pontos até ele contam como sabidos, até um erro dizer o contrário.</p>`
+      : '<p class="hint">Faça o teste de Nível uma vez, logo abaixo: a régua parte dele.</p>'}`;
+  box.querySelectorAll(".rg-linha").forEach(b => b.addEventListener("click", () => detalheNivel(b.dataset.nivel, r)));
+}
+
+function detalheNivel(n, r){
+  const nv = r.niveis.find(x => x.n === n);
+  const base = nivelBase();
+  const pts = PONTOS.filter(p => p.n === n).map(p => ({ p, e: E.estadoPonto(state.pontos[p.id], p.id, base) }));
+  const ordem = { treinando: 0, quase: 1, "nao-medido": 2, dominado: 3, presumido: 4 };
+  pts.sort((a, b) => ordem[a.e] - ordem[b.e]);
+  const c = abrirFolha(`
+    <h2 class="sheet-title">${n} · ${Math.round(nv.pct * 100)}%</h2>
+    <p class="sheet-sub">Metade vem da gramática, um quarto do vocabulário e um quarto do uso. Conta como seu a partir de 70%.</p>
+    <div class="stat-grid">
+      <div><b>${Math.round(nv.gram * 100)}%</b><span>gramática · ${nv.dominados} de ${nv.total} pontos</span></div>
+      <div><b>${Math.round(nv.vocab * 100)}%</b><span>vocabulário · meta de ${nv.metaVocab.toLocaleString("pt-BR")} palavras</span></div>
+      <div><b>${nv.uso === null ? "—" : Math.round(nv.uso * 100) + "%"}</b><span>${nv.uso === null ? `uso: sem medida (${r.frases} de ${E.MIN_FRASES_USO} frases)` : "uso: frases sem erro do nível, 30 dias"}</span></div>
+      <div><b>${nv.naoMedidos}</b><span>pontos ainda não medidos: entram como exercício no Tudo</span></div>
+    </div>
+    <div class="section-title flat">Os pontos do ${n}</div>
+    <div class="menu">${pts.map(({ p, e }) => `<button data-p="${p.id}"><span style="flex:1">${esc(p.nome)}</span><span class="tag est-${e}">${E.NOME_ESTADO[e]}</span></button>`).join("")}</div>`);
+  c.querySelectorAll("[data-p]").forEach(b => b.addEventListener("click", () => {
+    fecharFolha();
+    setTimeout(() => abrirPonto(b.dataset.p), 340);
+  }));
+}
+
+// ---------- O progresso do outro, só pra ver ----------
+function renderOutro(){
+  const m = state.juntos[state.outroUid];
+  if(!m) return;
+  $("outro-nome").textContent = m.Nome || "—";
+  const rg = m.Regua;
+  $("outro-regua").innerHTML = rg && rg.niveis ? `
+    <div class="route-head"><span class="section-title flat">Régua de nível</span><span class="tag yel">${rg.atual ? "Nível: " + esc(rg.atual) : "Ainda sem nível"}</span></div>
+    ${reguaHtml(NIVEIS_REGUA.map(n => ({ n, pct: (rg.niveis[n] || 0) / 100 })), rg.atual, false)}`
+    : '<p class="empty-line">A régua aparece aqui depois que essa pessoa abrir o Fluência novo uma vez.</p>';
+  const st = m.Stats || {};
+  $("outro-stats").innerHTML = `
+    <div><b>${m.Sequencia || 0}</b><span>dias seguidos</span></div>
+    <div><b>${st.revisoes ?? "—"}</b><span>revisões, 30 dias</span></div>
+    <div><b>${st.precisao >= 0 ? st.precisao + "%" : "—"}</b><span>precisão, 30 dias</span></div>
+    <div><b>${st.aprendidos ?? "—"}</b><span>cards aprendidos</span></div>
+    <div><b>${st.faladas ?? "—"}</b><span>falas, 30 dias</span></div>
+    <div><b>${st.total ?? "—"}</b><span>cards no total</span></div>`;
+  const pts = Object.entries(m.Pontos || {});
+  const ordem = { treinando: 0, quase: 1, dominado: 2 };
+  pts.sort((a, b) => (ordem[a[1].e] - ordem[b[1].e]) || (b[1].x - a[1].x));
+  $("outro-erros").innerHTML = pts.length ? pts.map(([id, p]) => PONTO[id] ? linhaPonto({ id, estado: p.e, erros: p.x, o: p.o, c: p.c }) : "").join("")
+    : '<p class="empty-line">Nenhum erro no mapa ainda.</p>';
+}
+
+// =========================================================
 // VOCÊ: estatísticas, nível e ajustes
 // =========================================================
 function abrirVoce(){
   preencherStatsSelect();
   renderStats();
   preencherSelect($("level-deck"), state.currentDeckId);
+  renderRegua();
   carregarNiveis();
   renderConfig();
 }
@@ -1458,6 +2182,7 @@ function preencherStatsSelect(){
   sel.innerHTML = '<option value="all">Todos os baralhos</option>' + Object.entries(state.decks).map(([id, d]) => `<option value="${id}">${esc(d.Name)}</option>`).join("");
   sel.value = state.statsDeckId !== "all" && state.decks[state.statsDeckId] ? state.statsDeckId : "all";
   state.statsDeckId = sel.value;
+  enfeitar(sel);
 }
 
 function contarAte(el, alvo, sufixo = ""){
@@ -1577,6 +2302,11 @@ async function corrigirTeste(){
     await fb.dbPut(fb.meu(`/Niveis/${novoId("n")}`), { Data: new Date().toISOString(), DeckId: t.deckId, Nivel: r.Nivel, Resumo: r.Resumo, Fortes: r.Fortes, Fracos: r.Fracos });
     state.perfil.UltimoNivel = r.Nivel;
     fb.dbPatch(fb.meu("/Profile"), { UltimoNivel: r.Nivel }).catch(() => {});
+    if(P.classifica(deck)) t.itens.forEach((it, i) => {
+      const errs = (r.Itens[i] && r.Itens[i].Erros) || [];
+      anotarErros(errs, "nivel");
+      if(it.Tipo !== "compreensao" && (t.respostas[i] || "").trim()) anotarProducao("nivel", errs.map(e => e.Ponto));
+    });
     publicarJuntos(true);
   }, $("q-next"));
   if(!r) return;
@@ -1620,6 +2350,8 @@ function renderConfig(){
   $("cfg-voice").innerHTML = '<option value="">Automática</option>' + vozes.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join("");
   $("cfg-voice").value = p.voz;
   $("cfg-slow").value = String(p.lento);
+  enfeitar($("cfg-voice"));
+  enfeitar($("cfg-slow"));
   $("cfg-autoplay").checked = !!p.autoplay;
   $("cfg-haptics").checked = !!p.vibrar;
 }
@@ -1631,11 +2363,13 @@ async function entrar(){
   ocupado("Carregando seus baralhos…");
   try{
     await carregarTudo();
+    await aplicarSemente().catch(err => console.warn("Semente da ES-16", err));
     $("login").classList.add("hidden");
     $("app").classList.remove("hidden");
     let ultimo = null;
     try{ ultimo = localStorage.getItem("fluencia:lastDeck"); }catch(e){}
     state.currentDeckId = ultimo && state.decks[ultimo] ? ultimo : Object.keys(state.decks)[0] || null;
+    atualizarVoce();
     irPara("v-study");
     publicarJuntos(true);
   }catch(err){
@@ -1646,7 +2380,8 @@ async function entrar(){
 
 function sair(){
   fb.logout();
-  Object.assign(state, { perfil: {}, decks: {}, dias: {}, currentDeckId: null, deckId: null, atual: null, lote: [], conversa: null, juntos: {} });
+  Object.assign(state, { perfil: {}, decks: {}, dias: {}, currentDeckId: null, deckId: null, atual: null, lote: [], conversa: null, juntos: {},
+    pontos: {}, erros: {}, producao: {}, exercicios: {}, aulas: {}, pontoTreino: null, desdeExercicio: 0 });
   while(camadas.length) camadas.pop();
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
@@ -1698,7 +2433,8 @@ ligar("btn-speak", "click", falarResposta);
 ligar("btn-check-typed", "click", conferirDigitado);
 ligar("type-answer", "keydown", e => { if(e.key === "Enter"){ e.preventDefault(); conferirDigitado(); } });
 ligar("deck-chip", "click", escolherDeck);
-ligar("btn-goto-decks", "click", () => {
+ligar("btn-goto-decks", "click", e => {
+  if(e.currentTarget.dataset.acao === "tudo"){ state.pontoTreino = null; lembrarEntrada("tudo"); proximoCard(); return; }
   if(!Object.keys(state.decks).length){ irPara("v-decks"); formDeck("create"); }
   else abrirDeck(state.currentDeckId);
 });
@@ -1737,6 +2473,14 @@ ligar("btn-talk-end", "click", encerrarConversa);
 ligar("btn-talk-leave", "click", fecharCamada);
 ligar("talk-input", "input", ajustarComposer);
 ligar("talk-input", "keydown", e => { if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); enviarFala(); } });
+
+// Meus erros, o ponto e o progresso do outro
+$("erros-tabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.errosAba = b.dataset.tab; renderErros(); }));
+ligar("btn-treinar-erros", "click", () => { state.pontoTreino = null; lembrarEntrada("erros"); irPara("v-study"); });
+ligar("ponto-back", "click", fecharCamada);
+ligar("btn-treinar-ponto", "click", treinarPonto);
+ligar("outro-back", "click", fecharCamada);
+document.querySelectorAll("[data-voce]").forEach(b => b.addEventListener("click", () => irPara("v-you", { camada: true })));
 
 // Juntos e Você
 ligar("btn-route", "click", gerarRoteiro);

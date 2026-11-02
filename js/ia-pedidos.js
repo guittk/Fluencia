@@ -2,6 +2,8 @@
 // Puro, sem DOM e sem rede, para poder ser testado fora do navegador.
 // A resposta sempre volta em JSON no formato do `schema` (structured outputs).
 
+import { IDS_PONTOS, PONTO, catalogoParaIA } from "./catalogo.js";
+
 export const IDIOMAS = [
   { code: "en", label: "Inglês" },
   { code: "es", label: "Espanhol" },
@@ -62,6 +64,16 @@ const CARD = obj({
 });
 const CARDS = obj({ Cards: arr(CARD) });
 const FRASE = obj({ Phrase: str, Translation: str });
+
+// ---------- pontos do catálogo ----------
+// Só baralhos de inglês classificam erros: o catálogo é de inglês.
+export const classifica = deck => !deck || !deck.Language || deck.Language === "en";
+const PONTO_ENUM = { type: "string", enum: ["", ...IDS_PONTOS] };
+const ERRO = obj({ Ponto: PONTO_ENUM, Original: str, Certo: str, Explicacao: str });
+const REGRA_PONTO =
+  "Ponto: escolha, da lista abaixo, o id do ponto de gramática ou de uso em que o erro cai. Use sempre um id da lista, nunca invente. " +
+  "'X-estrutura-pt' é a frase montada palavra por palavra a partir do português (\"is with a problem\", \"for we have\"). " +
+  "Se não houver erro, deixe vazio.\n<pontos>\n" + catalogoParaIA() + "\n</pontos>";
 
 // ---------- contexto do baralho ----------
 function perfil(deck){
@@ -172,12 +184,14 @@ export function pedidoTrocarObjetivo(deck, cards, novoObjetivo){
 }
 
 export function pedidoAvaliarProducao(deck, card, resposta, falada){
+  const cat = classifica(deck);
   return {
     effort: "low",
     schema: obj({
       Nota: { type: "string", enum: ["errei", "quase", "acertei", "facil"] },
       Correcao: str,
       Explicacao: str,
+      ...(cat ? { Erros: arr(ERRO) } : {}),
     }),
     system: SYSTEM_BASE,
     messages: [{ role: "user", content:
@@ -186,7 +200,9 @@ export function pedidoAvaliarProducao(deck, card, resposta, falada){
       `Resposta do aluno${falada ? " (transcrita da fala; ignore pontuação e maiúsculas)" : ""}: "${resposta}"\n\n` +
       "Avalie se a resposta comunica o mesmo sentido de forma correta e natural. Variações corretas valem. " +
       "Nota: 'facil' se perfeita e com o alvo; 'acertei' se correta com detalhe pequeno; 'quase' se o sentido passa mas há erro claro ou faltou o alvo; 'errei' se não passa. " +
-      "Correcao: a melhor versão da frase do aluno (ou a referência, se ele errou tudo). Explicacao: uma frase curta em português sobre o principal erro, ou vazia se não houve erro." }],
+      "Correcao: a melhor versão da frase do aluno (ou a referência, se ele errou tudo). Explicacao: uma frase curta em português sobre o principal erro, ou vazia se não houve erro." +
+      (cat ? "\n\nErros: cada erro de gramática ou de uso na resposta do aluno (não conte ter faltado o alvo nem palavra que ele não sabia), " +
+        "com Original (o trecho dele), Certo (o trecho corrigido), Explicacao (curta, em português) e Ponto. Lista vazia se não houver erro.\n" + REGRA_PONTO : "") }],
   };
 }
 
@@ -206,21 +222,28 @@ export function systemConversa(deck, { cenario, vaga, historico }){
     "Faça uma pergunta ou fala por vez, curta (até 3 frases), como numa conversa real, ajustada ao nível do aluno. " +
     "Reaja ao que ele disse antes de seguir. " +
     "Em Correcao, avalie a ÚLTIMA fala do aluno: se tiver erro de gramática, vocabulário ou algo que soe pouco natural, " +
-    "preencha Original (o trecho dele), Melhor (como um nativo diria) e Explicacao (curta, em português). Se estiver boa ou se ainda não houver fala do aluno, deixe os três vazios.";
+    "preencha Original (o trecho dele), Melhor (como um nativo diria) e Explicacao (curta, em português). Se estiver boa ou se ainda não houver fala do aluno, deixe os três vazios." +
+    (classifica(deck) ? "\nPreencha também Ponto, com o ponto do erro principal.\n" + REGRA_PONTO : "");
 }
 
 export const SCHEMA_TURNO = obj({
   Fala: str,
   Correcao: obj({ Original: str, Melhor: str, Explicacao: str }),
 });
+const SCHEMA_TURNO_PONTO = obj({
+  Fala: str,
+  Correcao: obj({ Original: str, Melhor: str, Explicacao: str, Ponto: PONTO_ENUM }),
+});
 
 export function pedidoTurno(deck, opcoes, turnos){
+  const cat = classifica(deck);
+  const vazia = cat ? { Original: "", Melhor: "", Explicacao: "", Ponto: "" } : { Original: "", Melhor: "", Explicacao: "" };
   const messages = [{ role: "user", content: "(Comece a conversa: cumprimente e faça a primeira pergunta.)" }];
   for(const t of turnos){
-    if(t.quem === "ia") messages.push({ role: "assistant", content: JSON.stringify({ Fala: t.texto, Correcao: t.correcao || { Original: "", Melhor: "", Explicacao: "" } }) });
+    if(t.quem === "ia") messages.push({ role: "assistant", content: JSON.stringify({ Fala: t.texto, Correcao: t.correcao ? Object.assign({}, vazia, t.correcao) : vazia }) });
     else messages.push({ role: "user", content: t.texto });
   }
-  return { effort: "low", schema: SCHEMA_TURNO, system: systemConversa(deck, opcoes), messages };
+  return { effort: "low", schema: cat ? SCHEMA_TURNO_PONTO : SCHEMA_TURNO, system: systemConversa(deck, opcoes), messages };
 }
 
 export function pedidoRelatorio(deck, opcoes, turnos, existentes = []){
@@ -230,7 +253,7 @@ export function pedidoRelatorio(deck, opcoes, turnos, existentes = []){
     schema: obj({
       Resumo: str,
       NivelPercebido: { type: "string", enum: NIVEIS },
-      Erros: arr(obj({ Original: str, Melhor: str, Explicacao: str })),
+      Erros: arr(obj(classifica(deck) ? { Original: str, Melhor: str, Explicacao: str, Ponto: PONTO_ENUM } : { Original: str, Melhor: str, Explicacao: str })),
       FrasesUteis: arr(str),
       Cards: arr(CARD),
     }),
@@ -241,7 +264,8 @@ export function pedidoRelatorio(deck, opcoes, turnos, existentes = []){
       "NivelPercebido (CEFR, pelo que ele mostrou), Erros (os mais importantes, até 8, com o trecho dele, como um nativo diria e a explicação), " +
       "FrasesUteis (até 6 frases prontas no idioma estudado que ele poderia ter usado), " +
       `e Cards (até 8 cards novos tirados dos erros e das frases úteis). ${REGRA_CARD} Regra da frase: ${regraNivel(2)}\n\n` +
-      `Alvos existentes no baralho:\n${existentes.join("\n") || "(nenhum)"}` }],
+      `Alvos existentes no baralho:\n${existentes.join("\n") || "(nenhum)"}` +
+      (classifica(deck) ? `\n\nEm cada erro, preencha Ponto.\n${REGRA_PONTO}` : "") }],
   };
 }
 
@@ -272,18 +296,21 @@ export function pedidoCorrigirTeste(deck, itens, respostas){
       Resumo: str,
       Fortes: arr(str),
       Fracos: arr(str),
-      Itens: arr(obj({ Nota: num, Comentario: str })),
+      Itens: arr(obj(classifica(deck) ? { Nota: num, Comentario: str, Erros: arr(ERRO) } : { Nota: num, Comentario: str })),
     }),
     system: SYSTEM_BASE,
     messages: [{ role: "user", content:
       `${perfil(deck)}\n\nCorrija a avaliação de nível abaixo. Para cada item, Nota de 0 a 1 e um Comentario curto em português ` +
       "(o que estava certo ou a resposta melhor). Depois estime o Nivel CEFR do aluno pelo conjunto, com Resumo (2 a 3 frases), " +
-      "Fortes e Fracos (até 3 cada). Seja honesto: em branco conta como não sabe. A resposta do item 'fala' veio de transcrição de voz.\n\n" + blocos }],
+      "Fortes e Fracos (até 3 cada). Seja honesto: em branco conta como não sabe. A resposta do item 'fala' veio de transcrição de voz." +
+      (classifica(deck) ? "\nEm cada item, Erros traz os erros de gramática e de uso da resposta (lista vazia se não houver ou se estiver em branco), com Original, Certo, Explicacao e Ponto.\n" + REGRA_PONTO : "") +
+      "\n\n" + blocos }],
   };
 }
 
 export function pedidoRoteiro(membros, idiomaCode = "en"){
-  const quem = membros.map(m => `- ${m.Nome} (nível ${m.Nivel || "?"}; objetivo: ${m.Objetivo || "geral"}): palavras a praticar — ${(m.Fracas || []).join(", ") || "nenhuma ainda"}`).join("\n");
+  const quem = membros.map(m => `- ${m.Nome} (nível ${m.Nivel || "?"}; objetivo: ${m.Objetivo || "geral"}): palavras a praticar — ${(m.Fracas || []).join(", ") || "nenhuma ainda"}` +
+    ((m.Pontos || []).length ? `; gramática em que mais erra — ${m.Pontos.join("; ")} (faça perguntas cuja resposta use esses pontos)` : "")).join("\n");
   return {
     effort: "low",
     schema: obj({
@@ -298,5 +325,87 @@ export function pedidoRoteiro(membros, idiomaCode = "en"){
       "Tema: um assunto do dia a dia que junte os objetivos dos dois (em português, curto). Aquecimento: uma frase em português dizendo como começar. " +
       `Perguntas: 8 perguntas no idioma, alternando quem pergunta (Quem = o nome de quem faz a pergunta), puxando as palavras a praticar dos dois, ` +
       "fáceis de responder de cabeça. FrasesModelo: 5 frases no idioma que ajudam a responder." }],
+  };
+}
+
+// ---------- Aula, exercícios e correção de texto (catálogo de pontos) ----------
+
+function descPonto(id){
+  const p = PONTO[id];
+  return p ? `${p.nome} (nível ${p.n === "X" ? "qualquer" : p.n}; erro típico de quem fala português: ${p.tip})` : id;
+}
+function listaErros(erros){
+  return erros.length ? erros.slice(0, 8).map(e => `- escreveu "${e.o}" → certo "${e.c}"`).join("\n") : "(nenhum erro dele registrado neste ponto ainda)";
+}
+
+export function pedidoAula(id, erros, objetivo){
+  return {
+    effort: "medium",
+    schema: obj({ PorQue: str, Regra: str, Exemplos: arr(obj({ En: str, Pt: str })), NaoConfundir: str }),
+    system: SYSTEM_BASE,
+    messages: [{ role: "user", content:
+      `Escreva uma aula curta, em português do Brasil, sobre este ponto do inglês: ${descPonto(id)}.\n` +
+      `Objetivo do aluno: ${objetivo || "uso geral do inglês"}.\nErros dele neste ponto:\n${listaErros(erros)}\n\n` +
+      "PorQue: 2 a 4 frases explicando por que um falante de português erra aqui, comparando com o português, ligado aos erros dele quando houver. " +
+      "Regra: a regra em uma linha, com a fórmula em inglês quando ajudar (ex.: If + passado, would + verbo). " +
+      "Exemplos: 3 frases em inglês do mundo do aluno (o objetivo dele), com a tradução em Pt. " +
+      "NaoConfundir: 1 a 3 frases sobre o ponto vizinho que se parece e quando usar cada um. Sem markdown." }],
+  };
+}
+
+export const TIPOS_EXERCICIO = ["corrigir", "traduzir", "transformar", "completar"];
+
+export function pedidoExercicios(id, erros, objetivo, n = 10){
+  return {
+    effort: "low",
+    schema: obj({ Itens: arr(obj({
+      Tipo: { type: "string", enum: TIPOS_EXERCICIO },
+      Instrucao: str, Frase: str, Resposta: str, Explicacao: str,
+    })) }),
+    system: SYSTEM_BASE,
+    messages: [{ role: "user", content:
+      `Crie ${n} exercícios curtos para treinar este ponto do inglês: ${descPonto(id)}.\n` +
+      `Objetivo do aluno: ${objetivo || "uso geral do inglês"}.\nErros dele neste ponto:\n${listaErros(erros)}\n\n` +
+      "Misture os quatro tipos, com pelo menos 2 de cada um dos três primeiros:\n" +
+      "- corrigir: Frase é uma frase em inglês com o erro, do jeito que um brasileiro erra; Resposta é a frase corrigida.\n" +
+      "- traduzir: Frase é uma frase em português que puxa o erro (a armadilha); Resposta é a tradução natural em inglês.\n" +
+      "- transformar: Frase em inglês a transformar, com a instrução do que fazer (ex.: comece com \"I wish\"); Resposta é a frase nova.\n" +
+      "- completar: Frase em inglês com uma lacuna ___ no ponto; Resposta é só o que vai na lacuna (1 a 3 palavras).\n" +
+      "Instrucao: em português, curta (ex.: \"Corrija a frase\"). Explicacao: uma frase curta em português dizendo a regra que a resposta usa. " +
+      "Frases do mundo do aluno, de 5 a 14 palavras, cada uma diferente. Não repita os erros dele literalmente." }],
+  };
+}
+
+export function pedidoAvaliarExercicio(id, item, resposta, falada){
+  return {
+    effort: "low",
+    schema: obj({ Nota: { type: "string", enum: ["errei", "quase", "acertei", "facil"] }, Correcao: str, Explicacao: str }),
+    system: SYSTEM_BASE,
+    messages: [{ role: "user", content:
+      `Exercício de inglês sobre: ${descPonto(id)}.\nTipo: ${item.Tipo}. Instrução: ${item.Instrucao}\nFrase: "${item.Frase}"\nResposta esperada: "${item.Resposta}"\n` +
+      `Resposta do aluno${falada ? " (transcrita da fala; ignore pontuação e maiúsculas)" : ""}: "${resposta}"\n\n` +
+      "Avalie sobretudo o ponto treinado. Variações corretas e naturais valem. " +
+      "Nota: 'facil' se perfeita; 'acertei' se o ponto está certo e há só detalhe pequeno fora dele; 'quase' se o ponto está meio certo; 'errei' se errou o ponto. " +
+      "Correcao: a melhor versão da resposta dele. Explicacao: uma frase curta em português sobre o erro, ou vazia se estiver certa." }],
+  };
+}
+
+// Escrever 3 frases e Falar 2 minutos: corrige frase a frase e manda cada erro pro ponto.
+export function pedidoCorrigirTexto(texto, { objetivo, tema, falada }){
+  return {
+    effort: "medium",
+    schema: obj({
+      Frases: arr(obj({ Original: str, Certo: str, Erros: arr(ERRO) })),
+      Comentario: str,
+      Melhores: arr(str),
+    }),
+    system: SYSTEM_BASE,
+    messages: [{ role: "user", content:
+      `O aluno ${falada ? "falou (transcrição de voz; ignore pontuação, maiúsculas e erro óbvio de transcrição)" : "escreveu"} em inglês` +
+      (tema ? ` sobre o tema "${tema}"` : "") + `. Objetivo dele: ${objetivo || "uso geral do inglês"}.\n<texto>\n${texto}\n</texto>\n\n` +
+      "Frases: divida o texto em frases, na ordem; para cada uma, Original (como ele disse), Certo (como um nativo diria, mantendo a ideia dele) " +
+      "e Erros (cada erro de gramática ou de uso, com Original, Certo, Explicacao curta em português e Ponto; lista vazia se a frase estiver boa). " +
+      "Comentario: 2 frases em português sobre o que ele faz bem e o que mais treinar. " +
+      "Melhores: 3 frases prontas em inglês, naturais, que ele poderia ter usado sobre o mesmo assunto.\n" + REGRA_PONTO }],
   };
 }

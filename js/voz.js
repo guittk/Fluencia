@@ -52,7 +52,7 @@ export function pararFala(){ if(temFala) speechSynthesis.cancel(); }
 
 // Ouve uma fala e devolve o texto. onParcial recebe o texto enquanto a pessoa fala.
 let ativo = null;
-export function ouvir({ idioma = "en", onParcial } = {}){
+export function ouvir({ idioma = "en", onParcial, continuo = false } = {}){
   return new Promise((resolve, reject) => {
     if(!temReconhecimento){ reject(new Error("Este navegador não reconhece fala. Use o Chrome ou o Edge.")); return; }
     pararOuvir();
@@ -61,7 +61,7 @@ export function ouvir({ idioma = "en", onParcial } = {}){
     rec.lang = langTag(idioma);
     rec.interimResults = true;
     rec.maxAlternatives = 1;
-    rec.continuous = false;
+    rec.continuous = continuo;
     let final = "";
     rec.onresult = ev => {
       let parcial = "";
